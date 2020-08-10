@@ -67,16 +67,10 @@ identifier = toText <$> lexeme ((:) <$> startingChar <*> many followingChar)
 unit :: a -> Parser a
 unit u = parens "" $> u
 
-pair :: Parser a -> (a -> a -> a) -> Parser a
-pair p c = parens (c <$> p <* dot <*> p)
-
 -- ZType
 
 zUnit :: Parser ZType
 zUnit = unit ZUnit
-
-zPair :: Parser ZType
-zPair = pair ztype ZPair
 
 zFunction :: Parser ZType
 zFunction = parens $ do
@@ -91,7 +85,7 @@ zFunction = parens $ do
 -- zVariable = ZVariable <$> identifier
 
 ztype :: Parser ZType
-ztype = try zUnit <|> try zPair <|> try zFunction -- <|> zVariable
+ztype = try zUnit <|> try zFunction -- <|> zVariable
 
 -- Untyped
 
@@ -100,6 +94,8 @@ tUnit = unit EUnit
 
 tPair :: Parser Untyped
 tPair = pair token (\a b -> EPair a b ())
+  where
+    pair p c = parens (c <$> p <* dot <*> p)
 
 tSymbol :: Parser Untyped
 tSymbol = ESymbol <$> identifier <*> pure ()

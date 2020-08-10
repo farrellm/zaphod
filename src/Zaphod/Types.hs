@@ -48,7 +48,6 @@ data ZType
   | ZForall Universal ZType
   | ZFunction ZType ZType
   | ZSymbol
-  | ZPair ZType ZType
   deriving (Eq)
 
 instance {-# OVERLAPPING #-} Show ZType where
@@ -58,7 +57,6 @@ instance {-# OVERLAPPING #-} Show ZType where
   show (ZForall u e) = "∀" ++ show u ++ "." ++ show e
   show (ZFunction a b) = show a ++ " -> " ++ show b
   show ZSymbol = "Symbol"
-  show (ZPair l r) = "(" ++ show l ++ " . " ++ show r ++ ")"
 
 data Expr t
   = EUnit

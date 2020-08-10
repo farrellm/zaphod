@@ -73,7 +73,6 @@ substitute :: ZType -> ZType -> ZType -> ZType
 substitute x y z | z == y = x
 substitute x y (ZForall beta b) = ZForall beta (substitute x y b)
 substitute x y (ZFunction a b) = ZFunction (substitute x y a) (substitute x y b)
-substitute x y (ZPair l r) = ZPair (substitute x y l) (substitute x y r)
 substitute _ _ z = z
 
 solveExistential :: ZType -> Existential -> Context -> Context

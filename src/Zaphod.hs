@@ -86,7 +86,6 @@ applyCtxType z@(ZExistential x) = do
     RMissing -> bug (MissingExistentialInContext x ctx)
 applyCtxType (ZFunction a b) = ZFunction <$> applyCtxType a <*> applyCtxType b
 applyCtxType (ZForall a t) = ZForall a <$> applyCtxType t
-applyCtxType (ZPair a b) = ZPair <$> applyCtxType a <*> applyCtxType b
 
 applyCtxExpr :: Typed -> State ZState Typed
 applyCtxExpr = traverse applyCtxType
@@ -105,14 +104,12 @@ notInFV a (ZExistential b) = a /= b
 notInFV a (ZForall _ b) = notInFV a b
 notInFV a (ZFunction b c) = notInFV a b && notInFV a c
 notInFV _ ZSymbol = True
-notInFV a (ZPair b c) = notInFV a b && notInFV a c
 
 isMonoType :: ZType -> Bool
 isMonoType ZUnit = True
 isMonoType ZSymbol = True
 isMonoType (ZUniversal _) = True
 isMonoType (ZExistential _) = True
-isMonoType (ZPair _ _) = True
 isMonoType (ZFunction _ _) = True
 isMonoType _ = False
 
@@ -199,10 +196,6 @@ subtype' (ZExistential alphaHat) a | alphaHat `notInFV` a = alphaHat `instantiat
 subtype' a (ZExistential alphaHat) | alphaHat `notInFV` a = a `instantiateR` alphaHat
 -- <:Symbol
 subtype' ZSymbol ZSymbol = pass
--- <:Pair
-subtype' (ZPair a1 a2) (ZPair b1 b2) = do
-  a1 `subtype` b1
-  a2 `subtype` b2
 --
 subtype' a b = bug $ TypeError (show a <> " is not a subtype of " <> show b)
 
