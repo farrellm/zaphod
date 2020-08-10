@@ -1,0 +1,10 @@
+cradle:
+  stack:
+    - path: "./src"
+      component: "zaphod:lib"
+
+    - path: "./app/Main.hs"
+      component: "zaphod:exe:zaphod"
+
+    - path: "./test"
+      component: "zaphod:test:zaphod-test"

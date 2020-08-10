@@ -1,6 +1,6 @@
 module Main where
 
-import Lib
+import Zaphod (test)
 
 main :: IO ()
-main = someFunc
+main = test

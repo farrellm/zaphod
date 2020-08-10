@@ -19,14 +19,23 @@ extra-source-files:
 # common to point users to the README.md file.
 description:         Please see the README on GitHub at <https://github.com/farrellm/zaphod#readme>
 
+default-extensions:
+- GADTs
+
 dependencies:
-- base >= 4.7 && < 5
+- base-noprelude >= 4.7 && < 5
+- microlens-mtl
+- microlens-th
+- megaparsec
+- parser-combinators
+- relude
+- text
 
 library:
   source-dirs: src
 
 executables:
-  zaphod-exe:
+  zaphod:
     main:                Main.hs
     source-dirs:         app
     ghc-options:
