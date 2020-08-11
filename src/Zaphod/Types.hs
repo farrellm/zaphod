@@ -95,13 +95,13 @@ instance Render Untyped where
 
 instance Render Typed where
   render EUnit = "()"
-  render (ESymbol t z) = t <> " :: " <> render z
+  render (ESymbol t z) = t <> " : " <> render z
   render (ELambda x e z) = "(\\" <> render x <> " . " <> render e <> ")" <> " :: " <> render z
   render p@(EPair l r z)
     | isList p = "(" <> render l <> go r
     | otherwise = "(" <> render l <> " . " <> render r <> ")"
     where
-      go EUnit = ")" <> " :: " <> render z
+      go EUnit = ")" <> " : " <> render z
       go (EPair a b _) = " " <> render a <> go b
       go _ = bug ListNotAList
   render (EAnnotation e z) = "(" <> render e <> " : " <> render z <> ")"

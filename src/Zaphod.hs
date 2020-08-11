@@ -35,6 +35,18 @@ traceM' :: Applicative f => Text -> f ()
 traceM' x = do
   when debug . traceM $ toString x
 
+analyzeUntyped :: Untyped -> Untyped
+analyzeUntyped
+  ( EPair
+      (ESymbol "lambda" ())
+      (EPair (ESymbol x ()) (EPair e EUnit ()) ())
+      ()
+    ) = ELambda (Variable x) (analyzeUntyped e) ()
+analyzeUntyped (ELambda x e ()) = ELambda x (analyzeUntyped e) ()
+analyzeUntyped (EPair a b ()) = EPair (analyzeUntyped a) (analyzeUntyped b) ()
+analyzeUntyped (EAnnotation e t) = EAnnotation (analyzeUntyped e) t
+analyzeUntyped a = traceShow a $ a
+
 emptyZState :: ZState
 emptyZState =
   ZState
@@ -351,12 +363,12 @@ test = do
     --
     unit = "()"
     pair = "(().())"
-    lambda = "(\\x.x)"
-    lambdaU = "(\\x.())"
-    lambda2 = "(\\x.(\\y.x))"
-    appLambda = "((\\x.x) ())"
+    lambda = "(lambda x x)"
+    lambdaU = "(lambda x ())"
+    lambda2 = "(lambda x (lambda y x))"
+    appLambda = "((lambda x x) ())"
     -- lambda2p = "(\\x.(\\y.(x.y)))"
     parseTest t = unsafePerformIO $ case parse token "" t of
       Left e -> die (errorBundlePretty e)
       Right v -> pure v
-    synthesized a = evalState (synthesize $ parseTest a) emptyZState
+    synthesized a = evalState (synthesize . analyzeUntyped $ parseTest a) emptyZState

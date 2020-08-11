@@ -47,8 +47,8 @@ colon = symbol ":"
 dot :: Parser Text
 dot = symbol "."
 
-backslash :: Parser Text
-backslash = symbol "\\"
+-- backslash :: Parser Text
+-- backslash = symbol "\\"
 
 arrow :: Parser Text
 arrow = symbol "->"
@@ -81,11 +81,11 @@ zFunction = parens $ do
       y <- arrow *> ztype
       try (ZFunction y <$> go) <|> pure y
 
--- zVariable :: Parser ZType
--- zVariable = ZVariable <$> identifier
+zVariable :: Parser ZType
+zVariable = ZUniversal . Universal <$> identifier
 
 ztype :: Parser ZType
-ztype = try zUnit <|> try zFunction -- <|> zVariable
+ztype = try zUnit <|> try zFunction <|> zVariable
 
 -- Untyped
 
@@ -106,14 +106,11 @@ tList = parens $ do
   ts <- NE.some token
   pure (foldl' (\r l -> EPair l r ()) EUnit $ NE.reverse ts)
 
-tLambda :: Parser Untyped
-tLambda = parens (backslash *> (ELambda . Variable <$> identifier <* dot <*> token <*> pure ()))
-
 tTyping :: Parser Untyped
 tTyping = parens (EAnnotation <$> token <* colon <*> ztype)
 
 token :: Parser Untyped
-token = try tUnit <|> try tSymbol <|> try tLambda <|> try tTyping <|> try tPair <|> tList
+token = try tUnit <|> try tSymbol <|> try tTyping <|> try tPair <|> tList
 
 tokens :: Parser [Untyped]
 tokens = many token <* eof
