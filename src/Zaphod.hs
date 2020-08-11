@@ -31,9 +31,9 @@ instance Exception ZaphodBug
 debug :: Bool
 debug = True
 
-traceM' :: Applicative f => String -> f ()
+traceM' :: Applicative f => Text -> f ()
 traceM' x = do
-  when debug $ traceM x
+  when debug . traceM $ toString x
 
 emptyZState :: ZState
 emptyZState =
@@ -116,60 +116,60 @@ isMonoType _ = False
 subtype :: ZType -> ZType -> State ZState ()
 subtype a b = do
   ctx <- use context
-  traceM' ("<sub " <> show a <> " <: " <> show b)
-  traceM' ("     " <> show ctx)
+  traceM' ("<sub " <> render a <> " <: " <> render b)
+  traceM' ("     " <> render ctx)
   subtype' a b
   ctx' <- use context
-  traceM' ("     " <> show ctx')
+  traceM' ("     " <> render ctx')
 
 instantiateL :: Existential -> ZType -> State ZState ()
 instantiateL a b = do
   ctx <- use context
-  traceM' ("<inL " <> show a <> " <: " <> show b)
-  traceM' ("     " <> show ctx)
+  traceM' ("<inL " <> render a <> " <: " <> render b)
+  traceM' ("     " <> render ctx)
   instantiateL' a b
   ctx' <- use context
-  traceM' (">    " <> show ctx')
+  traceM' (">    " <> render ctx')
 
 instantiateR :: ZType -> Existential -> State ZState ()
 instantiateR a b = do
   ctx <- use context
-  traceM' ("<inR " <> show a <> " := " <> show b)
-  traceM' ("     " <> show ctx)
+  traceM' ("<inR " <> render a <> " := " <> render b)
+  traceM' ("     " <> render ctx)
   instantiateR' a b
   ctx' <- use context
-  traceM' (">    " <> show ctx')
+  traceM' (">    " <> render ctx')
 
 check :: Untyped -> ZType -> State ZState Typed
 check a b = do
   ctx <- use context
-  traceM' ("<chk " <> show a <> " =: " <> show b)
-  traceM' ("     " <> show ctx)
+  traceM' ("<chk " <> render a <> " =: " <> render b)
+  traceM' ("     " <> render ctx)
   res <- check' a b
   ctx' <- use context
-  traceM' (">    " <> show ctx')
+  traceM' (">    " <> render ctx')
   pure res
 
 synthesize :: Untyped -> State ZState Typed
 synthesize a = do
   ctx <- use context
-  traceM' ("<syn " <> show a)
-  traceM' ("     " <> show ctx)
+  traceM' ("<syn " <> render a)
+  traceM' ("     " <> render ctx)
   res <- synthesize' a
   ctx' <- use context
-  traceM' (">    " <> show res)
-  traceM' ("     " <> show ctx')
+  traceM' (">    " <> render res)
+  traceM' ("     " <> render ctx')
   pure res
 
 applySynth :: ZType -> Untyped -> State ZState (Typed, ZType)
 applySynth a b = do
   ctx <- use context
-  traceM' ("<app " <> show a <> " =>> " <> show b)
-  traceM' ("     " <> show ctx)
+  traceM' ("<app " <> render a <> " =>> " <> render b)
+  traceM' ("     " <> render ctx)
   res <- applySynth' a b
   ctx' <- use context
-  traceM' (">    " <> show res)
-  traceM' ("     " <> show ctx')
+  traceM' (">    " <> render res)
+  traceM' ("     " <> render ctx')
   pure res
 
 subtype' :: ZType -> ZType -> State ZState ()
@@ -197,7 +197,7 @@ subtype' a (ZExistential alphaHat) | alphaHat `notInFV` a = a `instantiateR` alp
 -- <:Symbol
 subtype' ZSymbol ZSymbol = pass
 --
-subtype' a b = bug $ TypeError (show a <> " is not a subtype of " <> show b)
+subtype' a b = bug $ TypeError (render a <> " is not a subtype of " <> render b)
 
 instantiateL' :: Existential -> ZType -> State ZState ()
 -- InstLReach
@@ -330,22 +330,25 @@ applySynth' t e = do
 
 test :: IO ()
 test = do
-  print (parseTest unit)
-  print (parseTest pair)
-  print (parseTest lambda)
-  print (parseTest lambdaU)
-  print (parseTest lambda2)
-  print (parseTest appLambda)
+  print' (parseTest unit)
+  print' (parseTest pair)
+  print' (parseTest lambda)
+  print' (parseTest lambdaU)
+  print' (parseTest lambda2)
+  print' (parseTest appLambda)
   putStrLn "-"
-  print (synthesized unit)
+  print' (synthesized unit)
   -- print (synthesized pair)
   -- putStrLn ""
-  print (synthesized lambda)
-  print (synthesized lambdaU)
-  print (synthesized lambda2)
+  print' (synthesized lambda)
+  print' (synthesized lambdaU)
+  print' (synthesized lambda2)
   putStrLn "--------"
-  print (synthesized appLambda)
+  print' (synthesized appLambda)
   where
+    print' :: (Render a) => a -> IO ()
+    print' = putStrLn . toString . render
+    --
     unit = "()"
     pair = "(().())"
     lambda = "(\\x.x)"
