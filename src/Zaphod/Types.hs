@@ -10,7 +10,6 @@ module Zaphod.Types where
 
 import qualified Data.Text as T
 import Lens.Micro.TH (makeLenses)
-import Prelude hiding (show)
 
 data TypesError
   = ListNotAList
@@ -46,26 +45,40 @@ instance Render Variable where
   render = getVariable
 
 data ZType
-  = ZUnit
+  = ZType Int
+  | ZUnit
   | ZUniversal Universal
   | ZExistential Existential
   | ZForall Universal ZType
   | ZFunction ZType ZType
   | ZSymbol
+  | ZPair ZType ZType
   deriving (Show, Eq)
 
-instance {-# OVERLAPPING #-} Render ZType where
+instance Render ZType where
+  render (ZType 0) = "Type"
+  render (ZType n) = "Type " <> show n
   render ZUnit = "()"
   render (ZUniversal u) = "u" <> render u
-  render (ZExistential e) = "e" <> render e
+  render (ZExistential e) = "∃" <> render e
   render (ZForall u e) = "∀" <> render u <> "." <> render e
   render (ZFunction a b) = render a <> " -> " <> render b
   render ZSymbol = "Symbol"
+  render p@(ZPair l r)
+    | isZList p = "(" <> render l <> go r
+    | otherwise = "(" <> render l <> " . " <> render r <> ")"
+    where
+      go ZUnit = ")"
+      go (ZPair a b) = " " <> render a <> go b
+      go _ = bug ListNotAList
 
 data Expr t
-  = EUnit
+  = EType ZType
+  | EUnit
   | ESymbol Text t
   | ELambda Variable (Expr t) t
+  | ELambda' [Variable] (Expr t) t
+  | EApply (Expr t) [Expr t] t
   | EPair (Expr t) (Expr t) t
   | EAnnotation (Expr t) ZType
   deriving (Show, Functor, Foldable, Traversable)
@@ -74,37 +87,51 @@ type Untyped = Expr ()
 
 type Typed = Expr ZType
 
-isList :: Expr a -> Bool
-isList EUnit = True
-isList (EPair _ EUnit _) = True
-isList (EPair _ (EPair _ r _) _) = isList r
-isList _ = False
+isEList :: Expr a -> Bool
+isEList EUnit = True
+isEList (EPair _ EUnit _) = True
+isEList (EPair _ r _) = isEList r
+isEList _ = False
+
+isZList :: ZType -> Bool
+isZList ZUnit = True
+isZList (ZPair _ ZUnit) = True
+isZList (ZPair _ r) = isZList r
+isZList _ = False
 
 instance Render Untyped where
+  render (EType z) = render z
   render EUnit = "()"
   render (ESymbol t ()) = t
-  render (ELambda x e ()) = "(\\" <> render x <> " . " <> render e <> ")"
+  render (ELambda x e ()) = "(\\" <> render x <> " " <> render e <> ")"
+  render (ELambda' xs e ()) = "(\\(" <> T.intercalate " " (render <$> xs) <> ") " <> render e <> ")"
   render p@(EPair l r ())
-    | isList p = "(" <> render l <> go r
+    | isEList p = "(" <> render l <> go r
     | otherwise = "(" <> render l <> " . " <> render r <> ")"
     where
       go EUnit = ")"
       go (EPair a b ()) = " " <> render a <> go b
       go _ = bug ListNotAList
   render (EAnnotation e z) = "(" <> render e <> " : " <> render z <> ")"
+  render (EApply f xs ()) = "(" <> render f <> " " <> T.intercalate " " (render <$> xs) <> ")"
 
 instance Render Typed where
+  render (EType z) = render z
   render EUnit = "()"
   render (ESymbol t z) = t <> " : " <> render z
-  render (ELambda x e z) = "(\\" <> render x <> " . " <> render e <> ")" <> " :: " <> render z
+  render (ELambda x e z) = "(\\" <> render x <> " . " <> render e <> ") : " <> render z
+  render (ELambda' xs e z) =
+    "(\\(" <> T.intercalate " " (render <$> xs) <> ") . " <> render e <> ") : " <> render z
   render p@(EPair l r z)
-    | isList p = "(" <> render l <> go r
+    | isEList p = "(" <> render l <> go r
     | otherwise = "(" <> render l <> " . " <> render r <> ")"
     where
       go EUnit = ")" <> " : " <> render z
       go (EPair a b _) = " " <> render a <> go b
       go _ = bug ListNotAList
   render (EAnnotation e z) = "(" <> render e <> " : " <> render z <> ")"
+  render (EApply f xs z) =
+    "(" <> render f <> " " <> T.intercalate " " (render <$> xs) <> ") : " <> render z
 
 data LookupResult
   = RSolved ZType

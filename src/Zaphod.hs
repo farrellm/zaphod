@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections #-}
 {-# OPTIONS_GHC -fno-warn-deprecations #-}
 
 module Zaphod where
@@ -24,16 +25,25 @@ data ZaphodBug
   | MissingApplySynthCase ZType Untyped Context
   | NotMonotype ZType
   | InvalidApply Untyped
+  | InvalidType Untyped
+  | InvalidParameters Untyped
   deriving (Show)
 
 instance Exception ZaphodBug
 
 debug :: Bool
-debug = True
+debug = False
 
 traceM' :: Applicative f => Text -> f ()
 traceM' x = do
   when debug . traceM $ toString x
+
+evaluateType :: Untyped -> ZType
+evaluateType (EType (ZType n)) = ZType (n + 1)
+evaluateType (EType _) = ZType 0
+evaluateType EUnit = ZUnit
+evaluateType (ESymbol x ()) = ZUniversal (Universal x)
+evaluateType t = bug (InvalidType t)
 
 analyzeUntyped :: Untyped -> Untyped
 analyzeUntyped
@@ -42,10 +52,41 @@ analyzeUntyped
       (EPair (ESymbol x ()) (EPair e EUnit ()) ())
       ()
     ) = ELambda (Variable x) (analyzeUntyped e) ()
+analyzeUntyped (EPair (ESymbol "lambda" ()) (EPair xs (EPair e EUnit ()) ()) ()) =
+  case mkParams xs of
+    Just ps -> ELambda' ps (analyzeUntyped e) ()
+    Nothing -> bug (InvalidParameters xs)
+  where
+    mkParams :: Untyped -> Maybe [Variable]
+    mkParams EUnit = Just []
+    mkParams (EPair (ESymbol z ()) zs ()) = (Variable z :) <$> mkParams zs
+    mkParams _ = Nothing
+analyzeUntyped
+  ( EPair
+      (ESymbol ":" ())
+      (EPair e (EPair t EUnit ()) ())
+      ()
+    ) = EAnnotation e (evaluateType t)
 analyzeUntyped (ELambda x e ()) = ELambda x (analyzeUntyped e) ()
-analyzeUntyped (EPair a b ()) = EPair (analyzeUntyped a) (analyzeUntyped b) ()
+analyzeUntyped (EPair a b ()) =
+  case maybeList b of
+    Just xs -> EApply (analyzeUntyped a) (analyzeUntyped <$> xs) ()
+    Nothing -> EPair (analyzeUntyped a) (analyzeUntyped b) ()
 analyzeUntyped (EAnnotation e t) = EAnnotation (analyzeUntyped e) t
-analyzeUntyped a = traceShow a $ a
+analyzeUntyped a = a
+
+maybeList :: Untyped -> Maybe [Untyped]
+maybeList EUnit = Just []
+maybeList (EPair l r ()) = (l :) <$> maybeList r
+maybeList _ = Nothing
+
+makeEList :: [Untyped] -> Untyped
+makeEList [] = EUnit
+makeEList (x : xs) = EPair x (makeEList xs) ()
+
+makeZList :: [ZType] -> ZType
+makeZList [] = ZUnit
+makeZList (z : zs) = ZPair z (makeZList zs)
 
 emptyZState :: ZState
 emptyZState =
@@ -87,6 +128,7 @@ withUniversal alpha x = do
   pure res
 
 applyCtxType :: ZType -> State ZState ZType
+applyCtxType z@(ZType _) = pure z
 applyCtxType z@(ZUniversal _) = pure z
 applyCtxType ZUnit = pure ZUnit
 applyCtxType ZSymbol = pure ZSymbol
@@ -97,24 +139,31 @@ applyCtxType z@(ZExistential x) = do
     RUnsolved -> pure z
     RMissing -> bug (MissingExistentialInContext x ctx)
 applyCtxType (ZFunction a b) = ZFunction <$> applyCtxType a <*> applyCtxType b
+applyCtxType (ZPair a b) = ZPair <$> applyCtxType a <*> applyCtxType b
 applyCtxType (ZForall a t) = ZForall a <$> applyCtxType t
 
 applyCtxExpr :: Typed -> State ZState Typed
 applyCtxExpr = traverse applyCtxType
 
 exprType :: Typed -> ZType
+exprType (EType (ZType n)) = ZType (n + 1)
+exprType (EType _) = ZType 0
 exprType EUnit = ZUnit
 exprType (ELambda _ _ t) = t
+exprType (ELambda' _ _ t) = t
 exprType (EAnnotation _ t) = t
 exprType (ESymbol _ t) = t
 exprType (EPair _ _ t) = t
+exprType (EApply _ _ t) = t
 
 notInFV :: Existential -> ZType -> Bool
+notInFV _ (ZType _) = True
 notInFV _ ZUnit = True
 notInFV _ (ZUniversal _) = True
 notInFV a (ZExistential b) = a /= b
 notInFV a (ZForall _ b) = notInFV a b
 notInFV a (ZFunction b c) = notInFV a b && notInFV a c
+notInFV a (ZPair b c) = notInFV a b && notInFV a c
 notInFV _ ZSymbol = True
 
 isMonoType :: ZType -> Bool
@@ -123,6 +172,7 @@ isMonoType ZSymbol = True
 isMonoType (ZUniversal _) = True
 isMonoType (ZExistential _) = True
 isMonoType (ZFunction _ _) = True
+isMonoType (ZPair _ _) = True
 isMonoType _ = False
 
 subtype :: ZType -> ZType -> State ZState ()
@@ -195,6 +245,10 @@ subtype' (ZExistential alphaHat) (ZExistential betaHat) | alphaHat == betaHat = 
 subtype' (ZFunction a1 a2) (ZFunction b1 b2) = do
   b1 `subtype` a1
   a2 `subtype` b2
+-- <:Pair
+subtype' (ZPair a1 a2) (ZPair b1 b2) = do
+  a1 `subtype` b1
+  a2 `subtype` b2
 -- <:∀L
 subtype' (ZForall alpha a) b =
   markExtential $ \alphaHat ->
@@ -228,6 +282,19 @@ instantiateL' alphaHat (ZFunction a1 a2) = do
       alphaHat
   a1 `instantiateR` alphaHat1
   alphaHat2 `instantiateL` a2
+-- InstLPair
+instantiateL' alphaHat (ZPair a1 a2) = do
+  (alphaHat1, alphaHat2) <-
+    withHole alphaHat $ do
+      e1 <- nextExtential
+      e2 <- nextExtential
+      pure (e1, e2)
+  context
+    %= solveExistential
+      (ZPair (ZExistential alphaHat1) (ZExistential alphaHat2))
+      alphaHat
+  alphaHat1 `instantiateL` a1
+  alphaHat2 `instantiateL` a2
 -- InstLAllR
 instantiateL' alphaHat (ZForall beta b) = do
   withUniversal beta $ do
@@ -255,6 +322,19 @@ instantiateR' (ZFunction a1 a2) alphaHat = do
       alphaHat
   alphaHat1 `instantiateL` a1
   a2 `instantiateR` alphaHat2
+-- InstRPair
+instantiateR' (ZPair a1 a2) alphaHat = do
+  (alphaHat1, alphaHat2) <-
+    withHole alphaHat $ do
+      e1 <- nextExtential
+      e2 <- nextExtential
+      pure (e1, e2)
+  context
+    %= solveExistential
+      (ZFunction (ZExistential alphaHat1) (ZExistential alphaHat2))
+      alphaHat
+  a1 `instantiateR` alphaHat1
+  a2 `instantiateR` alphaHat2
 -- InstRAllL
 instantiateR' (ZForall beta b) alphaHat = do
   markExtential $ \betaHat -> do
@@ -277,7 +357,12 @@ check' (ELambda x e ()) z@(ZFunction a b) = do
   e' <- e `check` b
   e'' <- applyCtxExpr e'
   context %= dropVar x
-  pure (ELambda x e'' z)
+  applyCtxExpr (ELambda x e'' z)
+-- ->Pair
+check' (EPair e1 e2 ()) (ZPair b1 b2) = do
+  a1' <- e1 `check` b1
+  a2' <- e2 `check` b2
+  applyCtxExpr (EPair a1' a2' (ZPair (exprType a1') (exprType a2')))
 -- Sub
 check' e b = do
   a <- synthesize e
@@ -307,13 +392,23 @@ synthesize' (ELambda x e ()) = do
   e' <- e `check` betaHat
   context %= dropVar x
   applyCtxExpr (ELambda x e' (ZFunction alphaHat betaHat))
+synthesize' (ELambda' xs e ()) = do
+  alphaHats <- forM xs $ \x -> (x,) . ZExistential <$> nextExtential
+  betaHat <- ZExistential <$> nextExtential
+  for_ alphaHats $ \(x, alphaHat) ->
+    context %= (CVariable x alphaHat <:)
+  e' <- e `check` betaHat
+  for_ (reverse alphaHats) $ \(x, _) ->
+    context %= dropVar x
+  applyCtxExpr (ELambda' xs e' (ZFunction (makeZList $ snd <$> alphaHats) betaHat))
 -- ->E
-synthesize' (EPair e1 (EPair e2 rs ()) ())
-  | isList rs = do
-    e1' <- synthesize e1
-    (e2', c) <- exprType e1' `applySynth` e2
-    pure $ EPair e1' e2' c
+synthesize' (EApply e1 e2 ()) = do
+  e1' <- synthesize e1
+  (e2', c) <- exprType e1' `applySynth` makeEList e2
+  pure $ EPair e1' e2' c
 synthesize' p@(EPair _ _ ()) = bug (InvalidApply p)
+-- Type
+synthesize' (EType n) = pure (EType n)
 
 applySynth' :: ZType -> Untyped -> State ZState (Typed, ZType)
 -- ∀App
@@ -346,29 +441,49 @@ test = do
   print' (parseTest pair)
   print' (parseTest lambda)
   print' (parseTest lambdaU)
-  print' (parseTest lambda2)
+  -- print' (parseTest lambda2)
+  print' (parseTest lambda2')
+  print' (parseTest lambda3)
   print' (parseTest appLambda)
+  print' (parseTest annUnit)
+  putStrLn "-"
+  print' (analyzed unit)
+  print' (analyzed pair)
+  print' (analyzed lambda)
+  print' (analyzed lambdaU)
+  -- print' (analyzed lambda2)
+  print' (analyzed lambda2')
+  print' (analyzed lambda3)
+  print' (analyzed appLambda)
+  print' (analyzed appLambda2)
+  print' (analyzed annUnit)
   putStrLn "-"
   print' (synthesized unit)
-  -- print (synthesized pair)
-  -- putStrLn ""
   print' (synthesized lambda)
   print' (synthesized lambdaU)
-  print' (synthesized lambda2)
-  putStrLn "--------"
+  -- print' (synthesized lambda2)
+  print' (synthesized lambda2')
+  print' (synthesized lambda3)
   print' (synthesized appLambda)
+  print' (synthesized appLambda2)
+  print' (synthesized annUnit)
   where
     print' :: (Render a) => a -> IO ()
     print' = putStrLn . toString . render
     --
     unit = "()"
     pair = "(().())"
-    lambda = "(lambda x x)"
-    lambdaU = "(lambda x ())"
-    lambda2 = "(lambda x (lambda y x))"
-    appLambda = "((lambda x x) ())"
+    lambda = "(lambda (x) x)"
+    lambdaU = "(lambda (x) ())"
+    -- lambda2 = "(lambda x (lambda y x))"
+    lambda2' = "(lambda (x) (lambda (y) x))"
+    lambda3 = "(lambda (x y) x)"
+    appLambda = "((lambda (x) x) ())"
+    appLambda2 = "((lambda (x y) x) () ())"
+    annUnit = "(: () ())"
     -- lambda2p = "(\\x.(\\y.(x.y)))"
     parseTest t = unsafePerformIO $ case parse token "" t of
       Left e -> die (errorBundlePretty e)
       Right v -> pure v
-    synthesized a = evalState (synthesize . analyzeUntyped $ parseTest a) emptyZState
+    analyzed a = analyzeUntyped $ parseTest a
+    synthesized a = evalState (synthesize $ analyzed a) emptyZState
