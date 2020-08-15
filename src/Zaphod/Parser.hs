@@ -54,10 +54,10 @@ dot = symbol "."
 -- arrow = symbol "->"
 
 startingChar :: Parser Char
-startingChar = lowerChar <|> char '_' <|> char ':' <|> char '-'
+startingChar = letterChar <|> symbolChar <|> oneOf (":!@#%&-_" :: [Char])
 
 followingChar :: Parser Char
-followingChar = alphaNumChar <|> char '_' <|> char '\'' <|> char '>'
+followingChar = startingChar <|> digitChar <|> char '\''
 
 --
 
@@ -78,7 +78,7 @@ tPair = pair token (\a b -> EPair a b ())
     pair p c = parens (c <$> p <* dot <*> p)
 
 tSymbol :: Parser Untyped
-tSymbol = ESymbol <$> identifier <*> pure ()
+tSymbol = ESymbol . Symbol <$> identifier <*> pure ()
 
 tList :: Parser Untyped
 -- tList = TList <$> parens (NE.some token)

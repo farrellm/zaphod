@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -20,29 +21,33 @@ instance Exception TypesError
 class Render a where
   render :: a -> Text
 
-newtype Keyword = Keyword {getKeyword :: Text}
-  deriving (Show, Eq, Ord)
+newtype Symbol = Symbol {getSymbol :: Text}
+  deriving (Show, Eq, Ord, IsString)
 
-instance Render Keyword where
-  render k = ":" <> getKeyword k
+instance Render Symbol where
+  render k = getSymbol k
+  {-# INLINE render #-}
 
-newtype Universal = Universal {getUniversal :: Text}
+newtype Universal = Universal {getUniversal :: Symbol}
   deriving (Show, Eq, Ord)
 
 instance Render Universal where
-  render = getUniversal
+  render = getSymbol . getUniversal
+  {-# INLINE render #-}
 
-newtype Existential = Existential {getExistential :: Text}
+newtype Existential = Existential {getExistential :: Symbol}
   deriving (Show, Eq, Ord)
 
 instance Render Existential where
-  render = getExistential
+  render = getSymbol . getExistential
+  {-# INLINE render #-}
 
-newtype Variable = Variable {getVariable :: Text}
+newtype Variable = Variable {getVariable :: Symbol}
   deriving (Show, Eq, Ord)
 
 instance Render Variable where
-  render = getVariable
+  render = getSymbol . getVariable
+  {-# INLINE render #-}
 
 data ZType
   = ZType Int
@@ -75,7 +80,7 @@ instance Render ZType where
 data Expr t
   = EType ZType
   | EUnit
-  | ESymbol Text t
+  | ESymbol Symbol t
   | ELambda Variable (Expr t) t
   | ELambda' [Variable] (Expr t) t
   | EApply (Expr t) [Expr t] t
@@ -132,7 +137,7 @@ maybeList _ = Nothing
 instance Render Untyped where
   render (EType z) = render z
   render EUnit = "()"
-  render (ESymbol t ()) = t
+  render (ESymbol t ()) = render t
   render (ELambda x e ()) = "(\\" <> render x <> " " <> render e <> ")"
   render (ELambda' xs e ()) = "(\\(" <> T.intercalate " " (render <$> xs) <> ") " <> render e <> ")"
   render p@(EPair l r ())
@@ -148,7 +153,7 @@ instance Render Untyped where
 instance Render Typed where
   render (EType z) = render z
   render EUnit = "()"
-  render (ESymbol t z) = t <> " : " <> render z
+  render (ESymbol t z) = render t <> " : " <> render z
   render (ELambda x e z) = "(\\" <> render x <> " . " <> render e <> ") : " <> render z
   render (ELambda' xs e z) =
     "(\\(" <> T.intercalate " " (render <$> xs) <> ") . " <> render e <> ") : " <> render z
@@ -193,7 +198,7 @@ instance Render Context where
 data Hole = Hole Existential [ContextEntry]
   deriving (Show)
 
-type Environment = Map Text Typed
+type Environment = Map Symbol Typed
 
 data ZState = ZState
   { _context :: Context,

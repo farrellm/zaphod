@@ -35,14 +35,14 @@ traceM' x = do
 nextExtential :: (MonadState ZState m) => m Existential
 nextExtential = do
   c <- existentialData <<%= succ
-  let n = Existential $ toText [c]
+  let n = Existential $ fromString [c]
   context %= (CUnsolved n <:)
   pure n
 
 markExtential :: (MonadState ZState m) => (Existential -> m a) -> m a
 markExtential x = do
   c <- existentialData <<%= succ
-  let n = Existential $ toText [c]
+  let n = Existential $ fromString [c]
   context %= (CMarker n <:)
   context %= (CUnsolved n <:)
   res <- x n

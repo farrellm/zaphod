@@ -9,7 +9,7 @@ import Relude.Extra.Map ((!?))
 import Zaphod.Types
 
 data EvaluatorError
-  = UndefinedVariable Text
+  = UndefinedVariable Symbol
   | UnanalyzedApply Typed
   | NotLambda Typed
   | ArgumentCount Int Int

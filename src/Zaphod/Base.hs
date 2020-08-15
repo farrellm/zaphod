@@ -21,5 +21,5 @@ baseContext =
 --     (ZForall a . ZForall b $ ZFunction zab zb)
 -- ]
 
-baseEnvironment :: Map Text Typed
+baseEnvironment :: Environment
 baseEnvironment = mempty
