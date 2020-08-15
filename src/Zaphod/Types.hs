@@ -87,6 +87,17 @@ type Untyped = Expr ()
 
 type Typed = Expr ZType
 
+exprType :: Typed -> ZType
+exprType (EType (ZType n)) = ZType (n + 1)
+exprType (EType _) = ZType 0
+exprType EUnit = ZUnit
+exprType (ELambda _ _ t) = t
+exprType (ELambda' _ _ t) = t
+exprType (EAnnotation _ t) = t
+exprType (ESymbol _ t) = t
+exprType (EPair _ _ t) = t
+exprType (EApply _ _ t) = t
+
 isEList :: Expr a -> Bool
 isEList EUnit = True
 isEList (EPair _ EUnit _) = True
@@ -98,6 +109,25 @@ isZList ZUnit = True
 isZList (ZPair _ ZUnit) = True
 isZList (ZPair _ r) = isZList r
 isZList _ = False
+
+makeEList :: [Untyped] -> Untyped
+makeEList [] = EUnit
+makeEList (x : xs) = EPair x (makeEList xs) ()
+
+makeTypedList :: [Typed] -> Typed
+makeTypedList [] = EUnit
+makeTypedList (x : xs) =
+  let rs = makeTypedList xs
+   in EPair x rs (ZPair (exprType x) (exprType rs))
+
+makeZList :: [ZType] -> ZType
+makeZList [] = ZUnit
+makeZList (z : zs) = ZPair z (makeZList zs)
+
+maybeList :: Expr a -> Maybe [Expr a]
+maybeList EUnit = Just []
+maybeList (EPair l r _) = (l :) <$> maybeList r
+maybeList _ = Nothing
 
 instance Render Untyped where
   render (EType z) = render z
