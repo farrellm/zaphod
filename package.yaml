@@ -24,6 +24,7 @@ default-extensions:
 
 dependencies:
 - base-noprelude >= 4.7 && < 5
+- containers
 - microlens-mtl
 - microlens-th
 - megaparsec

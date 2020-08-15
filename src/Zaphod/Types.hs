@@ -193,8 +193,11 @@ instance Render Context where
 data Hole = Hole Existential [ContextEntry]
   deriving (Show)
 
+type Environment = Map Text Typed
+
 data ZState = ZState
   { _context :: Context,
+    _environment :: Environment,
     _existentialData :: Char
   }
   deriving (Show)

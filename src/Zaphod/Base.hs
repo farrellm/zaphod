@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Zaphod.Base where
+module Zaphod.Base (baseContext, baseEnvironment) where
 
 import Zaphod.Types
 
@@ -20,3 +20,6 @@ baseContext =
 --     (Variable "cdr")
 --     (ZForall a . ZForall b $ ZFunction zab zb)
 -- ]
+
+baseEnvironment :: Map Text Typed
+baseEnvironment = mempty

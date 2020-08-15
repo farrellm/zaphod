@@ -6,6 +6,7 @@ import System.IO.Unsafe (unsafePerformIO)
 import Text.Megaparsec (errorBundlePretty, parse)
 import Zaphod.Base
 import Zaphod.Checker
+import Zaphod.Evaluator
 import Zaphod.Parser
 import Zaphod.Types
 
@@ -93,6 +94,9 @@ test = do
   print' (synthesized annUnit)
   print' (synthesized appLambda)
   print' (synthesized appLambda2)
+  putStrLn "-"
+  print' (evaluated appLambda)
+  print' (evaluated appLambda2)
   where
     print' :: (Render a) => a -> IO ()
     print' = putStrLn . toString . render
@@ -113,3 +117,4 @@ test = do
       Right v -> pure v
     analyzed a = analyzeUntyped $ parseTest a
     synthesized a = evalState (synthesize $ analyzed a) emptyZState
+    evaluated a = evalState (evaluate =<< synthesize (analyzed a)) emptyZState
