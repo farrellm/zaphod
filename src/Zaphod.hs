@@ -25,12 +25,19 @@ emptyZState =
       _existentialData = 'α'
     }
 
-evaluateType :: Untyped -> ZType
-evaluateType (EType (ZType n)) = ZType (n + 1)
-evaluateType (EType _) = ZType 0
-evaluateType EUnit = ZUnit
-evaluateType (ESymbol x ()) = ZUniversal (Universal x)
-evaluateType t = bug (InvalidType t)
+analyzeType :: Untyped -> ZType
+analyzeType (EType (ZType n)) = ZType (n + 1)
+analyzeType (EType _) = ZType 0
+analyzeType EUnit = ZUnit
+analyzeType (ESymbol x ()) = ZUniversal (Universal x)
+analyzeType (EPair "forall" (EPair (ESymbol u ()) (EPair z EUnit ()) ()) ()) =
+  ZForall (Universal u) (analyzeType z)
+analyzeType (EPair "->" (EPair a (EPair b EUnit ()) ()) ()) =
+  ZFunction (analyzeType a) (analyzeType b)
+analyzeType t =
+  case maybeList t of
+    Just ts -> makeZList (analyzeType <$> ts)
+    Nothing -> bug (InvalidType t)
 
 analyzeUntyped :: Untyped -> Untyped
 analyzeUntyped
@@ -53,7 +60,7 @@ analyzeUntyped
       (ESymbol ":" ())
       (EPair e (EPair t EUnit ()) ())
       ()
-    ) = EAnnotation e (evaluateType t)
+    ) = EAnnotation (analyzeUntyped e) (analyzeType t)
 analyzeUntyped (ELambda x e ()) = ELambda x (analyzeUntyped e) ()
 analyzeUntyped (EPair a b ()) =
   case maybeList b of
@@ -73,6 +80,7 @@ test = do
   print' (parseTest lambda3)
   print' (parseTest appLambda)
   print' (parseTest annUnit)
+  print' (parseTest annLambda)
   putStrLn "-"
   print' (analyzed unit)
   print' (analyzed pair)
@@ -84,6 +92,7 @@ test = do
   print' (analyzed appLambda)
   print' (analyzed appLambda2)
   print' (analyzed annUnit)
+  print' (analyzed annLambda)
   putStrLn "-"
   print' (synthesized unit)
   print' (synthesized lambda)
@@ -94,6 +103,7 @@ test = do
   print' (synthesized annUnit)
   print' (synthesized appLambda)
   print' (synthesized appLambda2)
+  print' (synthesized annLambda)
   putStrLn "-"
   print' (evaluated appLambda)
   print' (evaluated appLambda2)
@@ -111,6 +121,7 @@ test = do
     appLambda = "((lambda (x) x) ())"
     appLambda2 = "((lambda (x y) x) () ())"
     annUnit = "(: () ())"
+    annLambda = "(: (lambda (x) x) (forall a (-> (a) a)))"
     -- lambda2p = "(\\x.(\\y.(x.y)))"
     parseTest t = unsafePerformIO $ case parse token "" t of
       Left e -> die (errorBundlePretty e)

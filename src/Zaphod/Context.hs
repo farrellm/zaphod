@@ -9,7 +9,7 @@ data ContextBug
   | MissingUniversalInContext Universal Context
   | MissingVarInContext Variable Context
   | MissingExistentialInContext Existential Context
-  | ExistentialAlreadySolved Existential Context
+  | ExistentialAlreadySolved ZType Existential Context
   | UnexpectedExistentialInSolve Existential Existential
   deriving (Show)
 
@@ -80,7 +80,11 @@ solveExistential :: ZType -> Existential -> Context -> Context
 solveExistential z e ctx@(Context cs) = Context $ go cs
   where
     go (CUnsolved f : rs) | e == f = CSolved f z : rs
-    go (CSolved f _ : _) | e == f = bug $ ExistentialAlreadySolved e ctx
+    go rs@(CSolved f y : _)
+      | e == f =
+        if z == y
+          then rs
+          else bug $ ExistentialAlreadySolved z e ctx
     go (CSolved f q : rs) = CSolved f ((z `substitute` ZExistential e) q) : go rs
     go (CVariable x q : rs) = CVariable x ((z `substitute` ZExistential e) q) : go rs
     go (r : rs) = r : go rs

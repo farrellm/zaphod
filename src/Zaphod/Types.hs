@@ -86,7 +86,10 @@ data Expr t
   | EApply (Expr t) [Expr t] t
   | EPair (Expr t) (Expr t) t
   | EAnnotation (Expr t) ZType
-  deriving (Show, Functor, Foldable, Traversable)
+  deriving (Show, Eq, Functor, Foldable, Traversable)
+
+instance IsString (Expr ()) where
+  fromString s = ESymbol (fromString s) ()
 
 type Untyped = Expr ()
 
