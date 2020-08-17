@@ -49,6 +49,7 @@ evaluate x = do
     eval p@(EPair _ _ _) = bug (UnanalyzedApply p)
     eval (ELambda v e _ t) = ELambda v e <$> ask <*> pure t
     eval (ELambda' vs e _ t) = ELambda' vs e <$> ask <*> pure t
+    eval (EQuote z _) = pure z
     eval e = pure e
     --
     extend env (Variable v, z) = M.insert v z env

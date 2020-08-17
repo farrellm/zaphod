@@ -88,6 +88,7 @@ data Expr t
   | EApply (Expr t) [Expr t] t
   | EPair (Expr t) (Expr t) t
   | EAnnotation (Expr t) ZType
+  | EQuote (Expr t) t
   deriving (Show, Eq, Functor, Foldable, Traversable)
 
 instance IsString (Expr ()) where
@@ -107,6 +108,7 @@ exprType (EAnnotation _ t) = t
 exprType (ESymbol _ t) = t
 exprType (EPair _ _ t) = t
 exprType (EApply _ _ t) = t
+exprType (EQuote _ t) = t
 
 isEList :: Expr a -> Bool
 isEList EUnit = True
@@ -148,6 +150,7 @@ stripType (ELambda' xs e n _) = ELambda' xs (stripType e) n ()
 stripType (EApply f xs _) = EApply (stripType f) (stripType <$> xs) ()
 stripType (EPair x y _) = EPair (stripType x) (stripType y) ()
 stripType (EAnnotation x t) = EAnnotation (stripType x) t
+stripType (EQuote x _) = EQuote (stripType x) ()
 
 instance Render Untyped where
   render (EType z) = render z
@@ -164,6 +167,7 @@ instance Render Untyped where
       go _ = bug ListNotAList
   render (EAnnotation e z) = "(" <> render e <> " : " <> render z <> ")"
   render (EApply f xs ()) = "(" <> render f <> " " <> T.intercalate " " (render <$> xs) <> ")"
+  render (EQuote t ()) = "'" <> render t
 
 render' :: Typed -> Text
 render' = render . stripType
@@ -185,6 +189,7 @@ instance Render Typed where
   render (EAnnotation e z) = "(" <> render' e <> " : " <> render z <> ")"
   render (EApply f xs z) =
     "(" <> render' f <> " " <> T.intercalate " " (render' <$> xs) <> ") : " <> render z
+  render (EQuote x z) = "'" <> render' x <> " : " <> render z
 
 data LookupResult
   = RSolved ZType

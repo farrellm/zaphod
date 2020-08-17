@@ -57,6 +57,7 @@ analyzeUntyped (EPair "lambda" (EPair xs (EPair e EUnit ()) ()) ()) =
     mkParams _ = Nothing
 analyzeUntyped (EPair ":" (EPair e (EPair t EUnit ()) ()) ()) =
   EAnnotation (analyzeUntyped e) (analyzeType t)
+analyzeUntyped (EPair "quote" (EPair x EUnit ()) ()) = EQuote x ()
 analyzeUntyped (ELambda x e n ()) = ELambda x (analyzeUntyped e) n ()
 analyzeUntyped (EPair a b ()) =
   case maybeList b of
@@ -78,6 +79,12 @@ test = do
   print' (parseTest appLambda)
   print' (parseTest annUnit)
   print' (parseTest annLambda)
+  print' (parseTest appLambda2')
+  print' (parseTest appLambda2'')
+  print' (parseTest qSym)
+  print' (parseTest qSym')
+  print' (parseTest qNested)
+  print' (parseTest qNested')
   putStrLn "-"
   print' (analyzed unit)
   print' (analyzed pair)
@@ -91,6 +98,12 @@ test = do
   print' (analyzed appLambda2)
   print' (analyzed annUnit)
   print' (analyzed annLambda)
+  print' (analyzed appLambda2')
+  print' (analyzed appLambda2'')
+  print' (analyzed qSym)
+  print' (analyzed qSym')
+  print' (analyzed qNested)
+  print' (analyzed qNested')
   putStrLn "-"
   print' (synthesized unit)
   print' (synthesized lambda)
@@ -103,20 +116,19 @@ test = do
   print' (synthesized appLambda)
   print' (synthesized appLambda2)
   print' (synthesized annLambda)
+  print' (synthesized appLambda2')
+  print' (synthesized appLambda2'')
+  print' (synthesized qSym)
   putStrLn "-"
   print' (evaluated appLambda)
   print' (evaluated appLambda2)
   print' (evaluated appLambda2)
-  putStrLn "--"
-  print' (parseTest appLambda2')
-  print' (analyzed appLambda2')
-  print' (synthesized appLambda2')
   print' (evaluated appLambda2')
-  putStrLn "---"
-  print' (parseTest appLambda2'')
-  print' (analyzed appLambda2'')
-  print' (synthesized appLambda2'')
   print' (evaluated appLambda2'')
+  print' (evaluated qSym)
+  print' (evaluated qSym')
+  print' (evaluated qNested)
+  print' (evaluated qNested')
   where
     print' :: (Render a) => a -> IO ()
     print' = putStrLn . toString . render
@@ -135,6 +147,10 @@ test = do
     annLambda = "(: (lambda (x) x) (forall a (-> (a) a)))"
     appLambda2' = "((lambda (x) (lambda (y) (cons x y))) ())"
     appLambda2'' = "(((lambda (x) (lambda (y) (cons x y))) ()) ())"
+    qSym = "(quote x)"
+    qSym' = "'x"
+    qNested = "(quote (x (a b) y z))"
+    qNested' = "'(x (a b) y z)"
     -- lambda2p = "(\\x.(\\y.(x.y)))"
     parseTest t = unsafePerformIO $ case parse token "" t of
       Left e -> die (errorBundlePretty e)

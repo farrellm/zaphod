@@ -85,6 +85,11 @@ eTuple = brackets $ do
   ts <- many token
   pure (foldl' (\r l -> EPair l r ()) EUnit $ reverse ("list" : ts))
 
+eQuote :: Parser Untyped
+eQuote = char '\'' *> (q <$> token)
+  where
+    q x = (EPair "quote" (EPair x EUnit ()) ())
+
 token :: Parser Untyped
 token =
   try eUnit
@@ -92,6 +97,7 @@ token =
     <|> try ePair
     <|> try eTuple
     <|> try eList
+    <|> try eQuote
 
 tokens :: Parser [Untyped]
 tokens = many token <* eof

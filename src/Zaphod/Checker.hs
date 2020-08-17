@@ -22,6 +22,7 @@ data ZaphodBug
   | MissingExistentialInContext Existential Context
   | NotMonotype ZType
   | InvalidApply Untyped
+  | NotQuotable Untyped
   deriving (Show)
 
 instance Exception ZaphodBug
@@ -375,6 +376,20 @@ synthesize' (EApply e1 e2 ()) = do
 synthesize' p@(EPair _ _ ()) = bug (InvalidApply p)
 -- Type
 synthesize' (EType n) = pure (EType n)
+-- Quote
+synthesize' (EQuote x ()) =
+  let z = (synthesizeQuoted x)
+   in pure $ EQuote z (exprType z)
+  where
+    synthesizeQuoted :: Untyped -> Typed
+    synthesizeQuoted (EType n) = (EType n)
+    synthesizeQuoted EUnit = EUnit
+    synthesizeQuoted (ESymbol s ()) = ESymbol s ZSymbol
+    synthesizeQuoted (EPair l r ()) =
+      let l' = synthesizeQuoted l
+          r' = synthesizeQuoted r
+       in EPair l' r' (ZPair (exprType l') (exprType r'))
+    synthesizeQuoted z = bug (NotQuotable z)
 
 applySynth' :: ZType -> Untyped -> State ZState (Typed, ZType)
 -- ∀App
