@@ -30,6 +30,10 @@ evaluate x = do
         Just v -> pure v
         Nothing -> bug (UndefinedVariable s)
     eval (EAnnotation v _) = pure v
+    eval (EApply (ESymbol "cons" _) [l, r] _) = do
+      l' <- eval l
+      r' <- eval r
+      pure $ EPair l' r' (ZPair (exprType l') (exprType r'))
     eval (EApply f xs _) = do
       f' <- eval f
       case f' of

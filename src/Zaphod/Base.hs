@@ -6,8 +6,19 @@ import Zaphod.Types
 
 baseContext :: Context
 baseContext =
-  Context []
+  Context
+    [ CVariable
+        (Variable "cons")
+        ( ZForall a . ZForall b $
+            ZFunction (zPair za zb) (ZPair za zb)
+        )
+    ]
   where
+    a = Universal "a"
+    b = Universal "b"
+    za = ZUniversal a
+    zb = ZUniversal b
+    zPair l r = ZPair l $ ZPair r ZUnit
 
 -- [ CVariable
 --     (Variable "cons")
