@@ -64,30 +64,34 @@ followingChar = startingChar <|> digitChar <|> char '\''
 identifier :: Parser Text
 identifier = toText <$> lexeme ((:) <$> startingChar <*> many followingChar)
 
-unit :: a -> Parser a
-unit u = parens "" $> u
-
 -- Untyped
 
-tUnit :: Parser Untyped
-tUnit = unit EUnit
+eUnit :: Parser Untyped
+eUnit = parens "" $> EUnit
 
-tPair :: Parser Untyped
-tPair = pair token (\a b -> EPair a b ())
-  where
-    pair p c = parens (c <$> p <* dot <*> p)
+ePair :: Parser Untyped
+ePair = parens (EPair <$> token <* dot <*> token <*> pure ())
 
-tSymbol :: Parser Untyped
-tSymbol = ESymbol . Symbol <$> identifier <*> pure ()
+eSymbol :: Parser Untyped
+eSymbol = ESymbol . Symbol <$> identifier <*> pure ()
 
-tList :: Parser Untyped
--- tList = TList <$> parens (NE.some token)
-tList = parens $ do
+eList :: Parser Untyped
+eList = parens $ do
   ts <- NE.some token
   pure (foldl' (\r l -> EPair l r ()) EUnit $ NE.reverse ts)
 
+eTuple :: Parser Untyped
+eTuple = brackets $ do
+  ts <- many token
+  pure (foldl' (\r l -> EPair l r ()) EUnit $ reverse ("list" : ts))
+
 token :: Parser Untyped
-token = try tUnit <|> try tSymbol <|> try tPair <|> tList
+token =
+  try eUnit
+    <|> try eSymbol
+    <|> try ePair
+    <|> try eTuple
+    <|> try eList
 
 tokens :: Parser [Untyped]
 tokens = many token <* eof

@@ -42,11 +42,11 @@ analyzeType t =
 analyzeUntyped :: Untyped -> Untyped
 analyzeUntyped
   ( EPair
-      (ESymbol "lambda" ())
+      "lambda"
       (EPair (ESymbol x ()) (EPair e EUnit ()) ())
       ()
     ) = ELambda (Variable x) (analyzeUntyped e) mempty ()
-analyzeUntyped (EPair (ESymbol "lambda" ()) (EPair xs (EPair e EUnit ()) ()) ()) =
+analyzeUntyped (EPair "lambda" (EPair xs (EPair e EUnit ()) ()) ()) =
   case mkParams xs of
     Just ps -> ELambda' ps (analyzeUntyped e) mempty ()
     Nothing -> bug (InvalidParameters xs)
@@ -55,12 +55,8 @@ analyzeUntyped (EPair (ESymbol "lambda" ()) (EPair xs (EPair e EUnit ()) ()) ())
     mkParams EUnit = Just []
     mkParams (EPair (ESymbol z ()) zs ()) = (Variable z :) <$> mkParams zs
     mkParams _ = Nothing
-analyzeUntyped
-  ( EPair
-      (ESymbol ":" ())
-      (EPair e (EPair t EUnit ()) ())
-      ()
-    ) = EAnnotation (analyzeUntyped e) (analyzeType t)
+analyzeUntyped (EPair ":" (EPair e (EPair t EUnit ()) ()) ()) =
+  EAnnotation (analyzeUntyped e) (analyzeType t)
 analyzeUntyped (ELambda x e n ()) = ELambda x (analyzeUntyped e) n ()
 analyzeUntyped (EPair a b ()) =
   case maybeList b of
