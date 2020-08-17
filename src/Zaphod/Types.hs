@@ -18,6 +18,8 @@ data TypesError
 
 instance Exception TypesError
 
+type Environment = Map Symbol Typed
+
 class Render a where
   render :: a -> Text
 
@@ -81,8 +83,8 @@ data Expr t
   = EType ZType
   | EUnit
   | ESymbol Symbol t
-  | ELambda Variable (Expr t) t
-  | ELambda' [Variable] (Expr t) t
+  | ELambda Variable (Expr t) Environment t
+  | ELambda' [Variable] (Expr t) Environment t
   | EApply (Expr t) [Expr t] t
   | EPair (Expr t) (Expr t) t
   | EAnnotation (Expr t) ZType
@@ -99,8 +101,8 @@ exprType :: Typed -> ZType
 exprType (EType (ZType n)) = ZType (n + 1)
 exprType (EType _) = ZType 0
 exprType EUnit = ZUnit
-exprType (ELambda _ _ t) = t
-exprType (ELambda' _ _ t) = t
+exprType (ELambda _ _ _ t) = t
+exprType (ELambda' _ _ _ t) = t
 exprType (EAnnotation _ t) = t
 exprType (ESymbol _ t) = t
 exprType (EPair _ _ t) = t
@@ -137,12 +139,22 @@ maybeList EUnit = Just []
 maybeList (EPair l r _) = (l :) <$> maybeList r
 maybeList _ = Nothing
 
+stripType :: Typed -> Untyped
+stripType (EType n) = EType n
+stripType EUnit = EUnit
+stripType (ESymbol s _) = ESymbol s ()
+stripType (ELambda x e n _) = ELambda x (stripType e) n ()
+stripType (ELambda' xs e n _) = ELambda' xs (stripType e) n ()
+stripType (EApply f xs _) = EApply (stripType f) (stripType <$> xs) ()
+stripType (EPair x y _) = EPair (stripType x) (stripType y) ()
+stripType (EAnnotation x t) = EAnnotation (stripType x) t
+
 instance Render Untyped where
   render (EType z) = render z
   render EUnit = "()"
   render (ESymbol t ()) = render t
-  render (ELambda x e ()) = "(\\" <> render x <> " " <> render e <> ")"
-  render (ELambda' xs e ()) = "(\\(" <> T.intercalate " " (render <$> xs) <> ") " <> render e <> ")"
+  render (ELambda x e _ ()) = "(\\" <> render x <> " " <> render e <> ")"
+  render (ELambda' xs e _ ()) = "(\\(" <> T.intercalate " " (render <$> xs) <> ") " <> render e <> ")"
   render p@(EPair l r ())
     | isEList p = "(" <> render l <> go r
     | otherwise = "(" <> render l <> " . " <> render r <> ")"
@@ -153,23 +165,26 @@ instance Render Untyped where
   render (EAnnotation e z) = "(" <> render e <> " : " <> render z <> ")"
   render (EApply f xs ()) = "(" <> render f <> " " <> T.intercalate " " (render <$> xs) <> ")"
 
+render' :: Typed -> Text
+render' = render . stripType
+
 instance Render Typed where
   render (EType z) = render z
   render EUnit = "()"
   render (ESymbol t z) = render t <> " : " <> render z
-  render (ELambda x e z) = "(\\" <> render x <> " . " <> render e <> ") : " <> render z
-  render (ELambda' xs e z) =
-    "(\\(" <> T.intercalate " " (render <$> xs) <> ") . " <> render e <> ") : " <> render z
+  render (ELambda x e _ z) = "(\\" <> render x <> " . " <> render' e <> ") : " <> render z
+  render (ELambda' xs e _ z) =
+    "(\\(" <> T.intercalate " " (render <$> xs) <> ") . " <> render' e <> ") : " <> render z
   render p@(EPair l r z)
-    | isEList p = "(" <> render l <> go r
-    | otherwise = "(" <> render l <> " . " <> render r <> ")"
+    | isEList p = "(" <> render' l <> go r
+    | otherwise = "(" <> render' l <> " . " <> render' r <> ")"
     where
       go EUnit = ")" <> " : " <> render z
-      go (EPair a b _) = " " <> render a <> go b
+      go (EPair a b _) = " " <> render' a <> go b
       go _ = bug ListNotAList
-  render (EAnnotation e z) = "(" <> render e <> " : " <> render z <> ")"
+  render (EAnnotation e z) = "(" <> render' e <> " : " <> render z <> ")"
   render (EApply f xs z) =
-    "(" <> render f <> " " <> T.intercalate " " (render <$> xs) <> ") : " <> render z
+    "(" <> render' f <> " " <> T.intercalate " " (render' <$> xs) <> ") : " <> render z
 
 data LookupResult
   = RSolved ZType
@@ -200,8 +215,6 @@ instance Render Context where
 
 data Hole = Hole Existential [ContextEntry]
   deriving (Show)
-
-type Environment = Map Symbol Typed
 
 data ZState = ZState
   { _context :: Context,

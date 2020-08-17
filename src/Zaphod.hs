@@ -45,10 +45,10 @@ analyzeUntyped
       (ESymbol "lambda" ())
       (EPair (ESymbol x ()) (EPair e EUnit ()) ())
       ()
-    ) = ELambda (Variable x) (analyzeUntyped e) ()
+    ) = ELambda (Variable x) (analyzeUntyped e) mempty ()
 analyzeUntyped (EPair (ESymbol "lambda" ()) (EPair xs (EPair e EUnit ()) ()) ()) =
   case mkParams xs of
-    Just ps -> ELambda' ps (analyzeUntyped e) ()
+    Just ps -> ELambda' ps (analyzeUntyped e) mempty ()
     Nothing -> bug (InvalidParameters xs)
   where
     mkParams :: Untyped -> Maybe [Variable]
@@ -61,7 +61,7 @@ analyzeUntyped
       (EPair e (EPair t EUnit ()) ())
       ()
     ) = EAnnotation (analyzeUntyped e) (analyzeType t)
-analyzeUntyped (ELambda x e ()) = ELambda x (analyzeUntyped e) ()
+analyzeUntyped (ELambda x e n ()) = ELambda x (analyzeUntyped e) n ()
 analyzeUntyped (EPair a b ()) =
   case maybeList b of
     Just xs -> EApply (analyzeUntyped a) (analyzeUntyped <$> xs) ()
@@ -77,6 +77,7 @@ test = do
   print' (parseTest lambdaU)
   -- print' (parseTest lambda2)
   print' (parseTest lambda2')
+  print' (parseTest lambda2'')
   print' (parseTest lambda3)
   print' (parseTest appLambda)
   print' (parseTest annUnit)
@@ -88,6 +89,7 @@ test = do
   print' (analyzed lambdaU)
   -- print' (analyzed lambda2)
   print' (analyzed lambda2')
+  print' (analyzed lambda2'')
   print' (analyzed lambda3)
   print' (analyzed appLambda)
   print' (analyzed appLambda2)
@@ -99,6 +101,7 @@ test = do
   print' (synthesized lambdaU)
   -- print' (synthesized lambda2)
   print' (synthesized lambda2')
+  print' (synthesized lambda2'')
   print' (synthesized lambda3)
   print' (synthesized annUnit)
   print' (synthesized appLambda)
@@ -107,6 +110,17 @@ test = do
   putStrLn "-"
   print' (evaluated appLambda)
   print' (evaluated appLambda2)
+  print' (evaluated appLambda2)
+  putStrLn "--"
+  print' (parseTest appLambda2')
+  print' (analyzed appLambda2')
+  print' (synthesized appLambda2')
+  print' (evaluated appLambda2')
+  putStrLn "---"
+  print' (parseTest appLambda2'')
+  print' (analyzed appLambda2'')
+  print' (synthesized appLambda2'')
+  print' (evaluated appLambda2'')
   where
     print' :: (Render a) => a -> IO ()
     print' = putStrLn . toString . render
@@ -117,11 +131,14 @@ test = do
     lambdaU = "(lambda (x) ())"
     -- lambda2 = "(lambda x (lambda y x))"
     lambda2' = "(lambda (x) (lambda (y) x))"
+    lambda2'' = "(lambda (x) (lambda (y) (cons x y)))"
     lambda3 = "(lambda (x y) x)"
     appLambda = "((lambda (x) x) ())"
     appLambda2 = "((lambda (x y) x) () ())"
     annUnit = "(: () ())"
     annLambda = "(: (lambda (x) x) (forall a (-> (a) a)))"
+    appLambda2' = "((lambda (x) (lambda (y) (cons x y))) ())"
+    appLambda2'' = "(((lambda (x) (lambda (y) (cons x y))) ()) ())"
     -- lambda2p = "(\\x.(\\y.(x.y)))"
     parseTest t = unsafePerformIO $ case parse token "" t of
       Left e -> die (errorBundlePretty e)

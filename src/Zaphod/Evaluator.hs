@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 
@@ -29,16 +30,21 @@ evaluate x = do
         Just v -> pure v
         Nothing -> bug (UndefinedVariable s)
     eval (EAnnotation v _) = pure v
-    eval (EApply (ELambda (Variable v) e _) xs _) = do
-      xs' <- traverse eval xs
-      local (M.insert v (makeTypedList xs')) $ eval e
-    eval (EApply (ELambda' vs e _) xs _)
-      | length vs == length xs = do
-        vxs <- traverse (\(v, z) -> (v,) <$> eval z) $ zip vs xs
-        local (\env -> foldl' extend env vxs) $ eval e
-      | otherwise = bug (ArgumentCount (length vs) (length xs))
-    eval (EApply f _ _) = bug (NotLambda f)
+    eval (EApply f xs _) = do
+      f' <- eval f
+      case f' of
+        ELambda (Variable v) e env _ -> do
+          xs' <- traverse eval xs
+          local (\_ -> M.insert v (makeTypedList xs') env) $ eval e
+        ELambda' vs e env _
+          | length vs == length xs -> do
+            vxs <- traverse (\(v, z) -> (v,) <$> eval z) $ zip vs xs
+            local (\_ -> foldl' extend env vxs) $ eval e
+          | otherwise -> bug (ArgumentCount (length vs) (length xs))
+        _ -> bug (NotLambda f)
     eval p@(EPair _ _ _) = bug (UnanalyzedApply p)
+    eval (ELambda v e _ t) = ELambda v e <$> ask <*> pure t
+    eval (ELambda' vs e _ t) = ELambda' vs e <$> ask <*> pure t
     eval e = pure e
     --
     extend env (Variable v, z) = M.insert v z env

@@ -1,6 +1,19 @@
 {-# OPTIONS_GHC -fno-warn-deprecations #-}
 
-module Zaphod.Context where
+module Zaphod.Context
+  ( wind,
+    unwind,
+    lookupType,
+    lookupVar,
+    (<:),
+    dropMarker,
+    dropUniversal,
+    dropVar,
+    substitute,
+    solveExistential,
+    isWellFormed,
+  )
+where
 
 import Zaphod.Types
 
@@ -11,6 +24,7 @@ data ContextBug
   | MissingExistentialInContext Existential Context
   | ExistentialAlreadySolved ZType Existential Context
   | UnexpectedExistentialInSolve Existential Existential
+  | NotMonotype ZType
   deriving (Show)
 
 instance Exception ContextBug
@@ -80,12 +94,22 @@ solveExistential :: ZType -> Existential -> Context -> Context
 solveExistential z e ctx@(Context cs) = Context $ go cs
   where
     go (CUnsolved f : rs) | e == f = CSolved f z : rs
-    go rs@(CSolved f y : _)
-      | e == f =
-        if z == y
-          then rs
-          else bug $ ExistentialAlreadySolved z e ctx
+    go (CSolved f _y : _) | e == f = bug $ ExistentialAlreadySolved z e ctx
     go (CSolved f q : rs) = CSolved f ((z `substitute` ZExistential e) q) : go rs
     go (CVariable x q : rs) = CVariable x ((z `substitute` ZExistential e) q) : go rs
     go (r : rs) = r : go rs
     go [] = bug $ MissingExistentialInContext e ctx
+
+isWellFormed :: ZType -> Context -> Bool
+isWellFormed ZUnit _ = True
+isWellFormed ZSymbol _ = True
+isWellFormed (ZFunction a b) ctx = isWellFormed a ctx && isWellFormed b ctx
+isWellFormed (ZPair a b) ctx = isWellFormed a ctx && isWellFormed b ctx
+isWellFormed (ZType _) _ = True
+isWellFormed (ZUniversal a) (Context (CUniversal b : _)) | a == b = True
+isWellFormed (ZExistential a) (Context (CUnsolved b : _)) | a == b = True
+isWellFormed (ZExistential a) (Context (CSolved b _ : _)) | a == b = True
+isWellFormed z@(ZUniversal _) (Context (_ : rs)) = isWellFormed z (Context rs)
+isWellFormed z@(ZExistential _) (Context (_ : rs)) = isWellFormed z (Context rs)
+isWellFormed z@(ZForall _ _) _ = bug (NotMonotype z)
+isWellFormed _ (Context []) = False

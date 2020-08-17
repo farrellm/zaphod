@@ -19,6 +19,7 @@ instance Exception ZaphodError
 data ZaphodBug
   = MissingSubtypeCase ZType ZType Context
   | MissingApplySynthCase ZType Untyped Context
+  | MissingExistentialInContext Existential Context
   | NotMonotype ZType
   | InvalidApply Untyped
   deriving (Show)
@@ -315,12 +316,12 @@ check' EUnit ZUnit = pure EUnit
 -- ∀|
 check' e (ZForall alpha a) = withUniversal alpha $ e `check` a
 -- ->|
-check' (ELambda x e ()) z@(ZFunction a b) = do
+check' (ELambda x e n ()) z@(ZFunction a b) = do
   context %= (CVariable x a <:)
   e' <- e `check` b
   e'' <- applyCtxExpr e'
   context %= dropVar x
-  applyCtxExpr (ELambda x e'' z)
+  applyCtxExpr (ELambda x e'' n z)
 -- ->Pair
 check' (EPair e1 e2 ()) (ZPair b1 b2) = do
   a1' <- e1 `check` b1
@@ -348,14 +349,14 @@ synthesize' (EAnnotation e a) = do
 -- 1|=>
 synthesize' EUnit = pure EUnit
 -- ->|=>
-synthesize' (ELambda x e ()) = do
+synthesize' (ELambda x e n ()) = do
   alphaHat <- ZExistential <$> nextExtential
   betaHat <- ZExistential <$> nextExtential
   context %= (CVariable x alphaHat <:)
   e' <- e `check` betaHat
   context %= dropVar x
-  applyCtxExpr (ELambda x e' (ZFunction alphaHat betaHat))
-synthesize' (ELambda' xs e ()) = do
+  applyCtxExpr (ELambda x e' n (ZFunction alphaHat betaHat))
+synthesize' (ELambda' xs e n ()) = do
   alphaHats <- forM xs $ \x -> (x,) . ZExistential <$> nextExtential
   betaHat <- ZExistential <$> nextExtential
   for_ alphaHats $ \(x, alphaHat) ->
@@ -363,7 +364,7 @@ synthesize' (ELambda' xs e ()) = do
   e' <- e `check` betaHat
   for_ (reverse alphaHats) $ \(x, _) ->
     context %= dropVar x
-  applyCtxExpr (ELambda' xs e' (ZFunction (makeZList $ snd <$> alphaHats) betaHat))
+  applyCtxExpr (ELambda' xs e' n (ZFunction (makeZList $ snd <$> alphaHats) betaHat))
 -- ->E
 synthesize' (EApply e1 e2 ()) = do
   e1' <- synthesize e1
