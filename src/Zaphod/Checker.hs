@@ -32,6 +32,12 @@ traceM' :: Applicative f => Text -> f ()
 traceM' x = do
   when debug . traceM $ toString x
 
+bind2 :: (Monad m) => (a -> b -> m c) -> m a -> m b -> m c
+bind2 f x y = do
+  x' <- x
+  y' <- y
+  f x' y'
+
 nextExtential :: (MonadState ZState m) => m Existential
 nextExtential = do
   c <- existentialData <<%= succ
@@ -97,9 +103,20 @@ isMonoType ZUnit = True
 isMonoType ZSymbol = True
 isMonoType (ZUniversal _) = True
 isMonoType (ZExistential _) = True
-isMonoType (ZFunction _ _) = True
-isMonoType (ZPair _ _) = True
+isMonoType (ZFunction a b) = isMonoType a && isMonoType b
+isMonoType (ZPair a b) = isMonoType a && isMonoType b
 isMonoType _ = False
+
+isDeeper :: ZType -> Existential -> State ZState Bool
+isDeeper tau alphaHat = do
+  ctx <- _context <$> get
+  let ctx' = dropExistential ctx
+  pure (isWellFormed tau ctx')
+  where
+    dropExistential (Context []) = Context []
+    dropExistential (Context (CSolved b _ : rs)) | alphaHat == b = Context rs
+    dropExistential (Context (CUnsolved b : rs)) | alphaHat == b = Context rs
+    dropExistential (Context (_ : rs)) = dropExistential $ Context rs
 
 subtype :: ZType -> ZType -> State ZState ()
 subtype a b = do
@@ -169,12 +186,12 @@ subtype' ZUnit ZUnit = pass
 subtype' (ZExistential alphaHat) (ZExistential betaHat) | alphaHat == betaHat = pass
 -- <:->
 subtype' (ZFunction a1 a2) (ZFunction b1 b2) = do
-  b1 `subtype` a1
-  a2 `subtype` b2
+  bind2 subtype (applyCtxType b1) (applyCtxType a1)
+  bind2 subtype (applyCtxType a2) (applyCtxType b2)
 -- <:Pair
 subtype' (ZPair a1 a2) (ZPair b1 b2) = do
-  a1 `subtype` b1
-  a2 `subtype` b2
+  bind2 subtype (applyCtxType a1) (applyCtxType b1)
+  bind2 subtype (applyCtxType a2) (applyCtxType b2)
 -- <:∀L
 subtype' (ZForall alpha a) b =
   markExtential $ \alphaHat ->
@@ -192,85 +209,105 @@ subtype' ZSymbol ZSymbol = pass
 subtype' a b = bug $ TypeError (render a <> " is not a subtype of " <> render b)
 
 instantiateL' :: Existential -> ZType -> State ZState ()
--- InstLReach
-instantiateL' alphaHat (ZExistential betaHat) =
-  context %= solveExistential (ZExistential alphaHat) betaHat
--- InstLArr
-instantiateL' alphaHat (ZFunction a1 a2) = do
-  (alphaHat1, alphaHat2) <-
-    withHole alphaHat $ do
-      e2 <- nextExtential
-      e1 <- nextExtential
-      pure (e1, e2)
-  context
-    %= solveExistential
-      (ZFunction (ZExistential alphaHat1) (ZExistential alphaHat2))
-      alphaHat
-  a1 `instantiateR` alphaHat1
-  alphaHat2 `instantiateL` a2
--- InstLPair
-instantiateL' alphaHat (ZPair a1 a2) = do
-  (alphaHat1, alphaHat2) <-
-    withHole alphaHat $ do
-      e1 <- nextExtential
-      e2 <- nextExtential
-      pure (e1, e2)
-  context
-    %= solveExistential
-      (ZPair (ZExistential alphaHat1) (ZExistential alphaHat2))
-      alphaHat
-  alphaHat1 `instantiateL` a1
-  alphaHat2 `instantiateL` a2
--- InstLAllR
-instantiateL' alphaHat (ZForall beta b) = do
-  withUniversal beta $ do
-    alphaHat `instantiateL` b
--- InstLSolve
-instantiateL' alphaHat tau = do
-  if isMonoType tau
-    then context %= solveExistential tau alphaHat
-    else bug $ NotMonotype tau
+instantiateL' alphaHat x = do
+  d <-
+    if isMonoType x
+      then isDeeper x alphaHat
+      else pure False
+  -- traceShowM d
+  go d x
+  where
+    go :: Bool -> ZType -> State ZState ()
+    -- InstLSolve
+    go True tau = context %= solveExistential tau alphaHat
+    -- InstLReach
+    go _ (ZExistential betaHat) =
+      context %= solveExistential (ZExistential alphaHat) betaHat
+    -- InstLArr
+    go _ (ZFunction a1 a2) = do
+      (alphaHat1, alphaHat2) <-
+        withHole alphaHat $ do
+          e2 <- nextExtential
+          e1 <- nextExtential
+          pure (e1, e2)
+      context
+        %= solveExistential
+          (ZFunction (ZExistential alphaHat1) (ZExistential alphaHat2))
+          alphaHat
+      a1 `instantiateR` alphaHat1
+      alphaHat2 `instantiateL` a2
+    -- InstLPair
+    go _ (ZPair a1 a2) = do
+      (alphaHat1, alphaHat2) <-
+        withHole alphaHat $ do
+          e1 <- nextExtential
+          e2 <- nextExtential
+          pure (e1, e2)
+      context
+        %= solveExistential
+          (ZPair (ZExistential alphaHat1) (ZExistential alphaHat2))
+          alphaHat
+      alphaHat1 `instantiateL` a1
+      alphaHat2 `instantiateL` a2
+    -- InstLAllR
+    go _ (ZForall beta b) = do
+      withUniversal beta $ do
+        alphaHat `instantiateL` b
+    --
+    go _ tau = bug $ NotMonotype tau
 
 instantiateR' :: ZType -> Existential -> State ZState ()
--- InstRReach
-instantiateR' betaHat@(ZExistential _) alphaHat = do
-  context %= solveExistential betaHat alphaHat
--- InstRArr
-instantiateR' (ZFunction a1 a2) alphaHat = do
-  (alphaHat1, alphaHat2) <-
-    withHole alphaHat $ do
-      e1 <- nextExtential
-      e2 <- nextExtential
-      pure (e1, e2)
-  context
-    %= solveExistential
-      (ZFunction (ZExistential alphaHat1) (ZExistential alphaHat2))
-      alphaHat
-  alphaHat1 `instantiateL` a1
-  a2 `instantiateR` alphaHat2
--- InstRPair
-instantiateR' (ZPair a1 a2) alphaHat = do
-  (alphaHat1, alphaHat2) <-
-    withHole alphaHat $ do
-      e1 <- nextExtential
-      e2 <- nextExtential
-      pure (e1, e2)
-  context
-    %= solveExistential
-      (ZFunction (ZExistential alphaHat1) (ZExistential alphaHat2))
-      alphaHat
-  a1 `instantiateR` alphaHat1
-  a2 `instantiateR` alphaHat2
--- InstRAllL
-instantiateR' (ZForall beta b) alphaHat = do
-  markExtential $ \betaHat -> do
-    let b' = (ZExistential betaHat `substitute` ZUniversal beta) b
-    b' `instantiateR` alphaHat
--- InstRSolve
-instantiateR' tau alphaHat =
-  if isMonoType tau
-    then context %= solveExistential tau alphaHat
-    else bug $ NotMonotype tau
+instantiateR' x alphaHat = do
+  d <-
+    if isMonoType x
+      then isDeeper x alphaHat
+      else pure False
+  -- traceShowM d
+  go d x
+  where
+    go :: Bool -> ZType -> State ZState ()
+    -- InstRSolve
+    go True tau = context %= solveExistential tau alphaHat
+    -- InstRReach
+    go _ (ZExistential betaHat) = do
+      context %= solveExistential (ZExistential alphaHat) betaHat
+    -- InstRArr
+    go _ (ZFunction a1 a2) = do
+      (alphaHat1, alphaHat2) <-
+        withHole alphaHat $ do
+          e1 <- nextExtential
+          e2 <- nextExtential
+          pure (e1, e2)
+      context
+        %= solveExistential
+          (ZFunction (ZExistential alphaHat1) (ZExistential alphaHat2))
+          alphaHat
+      -- alphaHat1 `instantiateL` a1
+      -- a2 `instantiateR` alphaHat2
+      (alphaHat1 `instantiateL`) =<< applyCtxType a1
+      (`instantiateR` alphaHat2) =<< applyCtxType a2
+    -- InstRPair
+    go _ (ZPair a1 a2) = do
+      (alphaHat1, alphaHat2) <-
+        withHole alphaHat $ do
+          e1 <- nextExtential
+          e2 <- nextExtential
+          pure (e1, e2)
+      context
+        %= solveExistential
+          (ZPair (ZExistential alphaHat1) (ZExistential alphaHat2))
+          alphaHat
+      -- a1 `instantiateR` alphaHat1
+      -- a2 `instantiateR` alphaHat2
+      (`instantiateR` alphaHat1) =<< applyCtxType a1
+      (`instantiateR` alphaHat2) =<< applyCtxType a2
+    -- InstRAllL
+    go _ (ZForall beta b) = do
+      markExtential $ \betaHat -> do
+        let b' = (ZExistential betaHat `substitute` ZUniversal beta) b
+        b' `instantiateR` alphaHat
+    --
+    go _ tau = bug $ NotMonotype tau
 
 check' :: Untyped -> ZType -> State ZState Typed
 -- 1|
