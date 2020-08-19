@@ -11,8 +11,8 @@ import Zaphod.Parser
 import Zaphod.Types
 
 data ZaphodBug
-  = InvalidType Untyped
-  | InvalidParameters Untyped
+  = InvalidType Raw
+  | InvalidParameters Raw
   deriving (Show)
 
 instance Exception ZaphodBug
@@ -25,46 +25,47 @@ emptyZState =
       _existentialData = 'α'
     }
 
-analyzeType :: Untyped -> ZType
-analyzeType (EType (ZType n)) = ZType (n + 1)
-analyzeType (EType _) = ZType 0
-analyzeType EUnit = ZUnit
-analyzeType (ESymbol x ()) = ZUniversal (Universal x)
-analyzeType (EPair "forall" (EPair (ESymbol u ()) (EPair z EUnit ()) ()) ()) =
+analyzeType :: Raw -> ZType
+analyzeType RUnit = ZUnit
+analyzeType (RSymbol x) = ZUniversal (Universal x)
+analyzeType (RPair "forall" (RPair (RSymbol u) (RPair z RUnit))) =
   ZForall (Universal u) (analyzeType z)
-analyzeType (EPair "->" (EPair a (EPair b EUnit ()) ()) ()) =
+analyzeType (RPair "->" (RPair a (RPair b RUnit))) =
   ZFunction (analyzeType a) (analyzeType b)
 analyzeType t =
   case maybeList t of
-    Just ts -> makeZList (analyzeType <$> ts)
+    Just ts -> fromList' (analyzeType <$> ts)
     Nothing -> bug (InvalidType t)
 
-analyzeUntyped :: Untyped -> Untyped
+analyzeQuoted :: Raw -> Untyped
+analyzeQuoted RUnit = EUnit
+analyzeQuoted (RSymbol s) = ESymbol s ()
+analyzeQuoted (RPair l r) = EPair (analyzeQuoted l) (analyzeQuoted r) ()
+
+analyzeUntyped :: Raw -> Untyped
+analyzeUntyped RUnit = EUnit
+analyzeUntyped (RSymbol s) = ESymbol s ()
 analyzeUntyped
-  ( EPair
+  ( RPair
       "lambda"
-      (EPair (ESymbol x ()) (EPair e EUnit ()) ())
-      ()
+      (RPair (RSymbol x) (RPair e RUnit))
     ) = ELambda (Variable x) (analyzeUntyped e) mempty ()
-analyzeUntyped (EPair "lambda" (EPair xs (EPair e EUnit ()) ()) ()) =
+analyzeUntyped (RPair "lambda" (RPair xs (RPair e RUnit))) =
   case mkParams xs of
     Just ps -> ELambda' ps (analyzeUntyped e) mempty ()
     Nothing -> bug (InvalidParameters xs)
   where
-    mkParams :: Untyped -> Maybe [Variable]
-    mkParams EUnit = Just []
-    mkParams (EPair (ESymbol z ()) zs ()) = (Variable z :) <$> mkParams zs
+    mkParams :: Raw -> Maybe [Variable]
+    mkParams RUnit = Just []
+    mkParams (RPair (RSymbol z) zs) = (Variable z :) <$> mkParams zs
     mkParams _ = Nothing
-analyzeUntyped (EPair ":" (EPair e (EPair t EUnit ()) ()) ()) =
+analyzeUntyped (RPair ":" (RPair e (RPair t RUnit))) =
   EAnnotation (analyzeUntyped e) (analyzeType t)
-analyzeUntyped (EPair "quote" (EPair x EUnit ()) ()) = EQuote x ()
-analyzeUntyped (ELambda x e n ()) = ELambda x (analyzeUntyped e) n ()
-analyzeUntyped (EPair a b ()) =
+analyzeUntyped (RPair "quote" (RPair x RUnit)) = EQuote (analyzeQuoted x) ()
+analyzeUntyped (RPair a b) =
   case maybeList b of
     Just xs -> EApply (analyzeUntyped a) (analyzeUntyped <$> xs) ()
     Nothing -> EPair (analyzeUntyped a) (analyzeUntyped b) ()
-analyzeUntyped (EAnnotation e t) = EAnnotation (analyzeUntyped e) t
-analyzeUntyped a = a
 
 test :: IO ()
 test = do

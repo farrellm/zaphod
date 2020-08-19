@@ -12,16 +12,23 @@ module Zaphod.Types where
 import qualified Data.Text as T
 import Lens.Micro.TH (makeLenses)
 
-data TypesError
-  = ListNotAList
-  deriving (Show)
-
-instance Exception TypesError
-
 type Environment = Map Symbol Typed
 
 class Render a where
   render :: a -> Text
+
+class MaybeList a where
+  isList :: a -> Bool
+  fromList' :: [a] -> a
+  maybeList :: a -> Maybe [a]
+
+instance Render a => Render [a] where
+  render xs = "(" <> T.intercalate " " (render <$> xs) <> ")"
+  {-# INLINE render #-}
+
+instance (Render a, Render b) => Render (a, b) where
+  render (l, r) = "(" <> render l <> " . " <> render r <> ")"
+  {-# INLINE render #-}
 
 newtype Symbol = Symbol {getSymbol :: Text}
   deriving (Show, Eq, Ord, IsString)
@@ -51,6 +58,36 @@ instance Render Variable where
   render = getSymbol . getVariable
   {-# INLINE render #-}
 
+data Raw
+  = RUnit
+  | RSymbol Symbol
+  | RPair Raw Raw
+  deriving (Show, Eq)
+
+instance IsString Raw where
+  fromString s = RSymbol (fromString s)
+
+instance Render Raw where
+  render RUnit = "()"
+  render (RSymbol s) = render s
+  render p@(RPair l r) =
+    case maybeList p of
+      Just xs -> render xs
+      Nothing -> render (l, r)
+
+instance MaybeList Raw where
+  isList RUnit = True
+  isList (RPair _ RUnit) = True
+  isList (RPair _ r) = isList r
+  isList _ = False
+
+  fromList' [] = RUnit
+  fromList' (x : xs) = RPair x (fromList' xs)
+
+  maybeList RUnit = Just []
+  maybeList (RPair l r) = (l :) <$> maybeList r
+  maybeList _ = Nothing
+
 data ZType
   = ZType Int
   | ZUnit
@@ -62,6 +99,19 @@ data ZType
   | ZPair ZType ZType
   deriving (Show, Eq)
 
+instance MaybeList ZType where
+  isList ZUnit = True
+  isList (ZPair _ ZUnit) = True
+  isList (ZPair _ r) = isList r
+  isList _ = False
+
+  fromList' [] = ZUnit
+  fromList' (x : xs) = ZPair x (fromList' xs)
+
+  maybeList ZUnit = Just []
+  maybeList (ZPair l r) = (l :) <$> maybeList r
+  maybeList _ = Nothing
+
 instance Render ZType where
   render (ZType 0) = "Type"
   render (ZType n) = "Type " <> show n
@@ -71,13 +121,10 @@ instance Render ZType where
   render (ZForall u e) = "∀" <> render u <> "." <> render e
   render (ZFunction a b) = render a <> " -> " <> render b
   render ZSymbol = "Symbol"
-  render p@(ZPair l r)
-    | isZList p = "(" <> render l <> go r
-    | otherwise = "(" <> render l <> " . " <> render r <> ")"
-    where
-      go ZUnit = ")"
-      go (ZPair a b) = " " <> render a <> go b
-      go _ = bug ListNotAList
+  render p@(ZPair l r) =
+    case maybeList p of
+      Just xs -> render xs
+      Nothing -> render (l, r)
 
 data Expr t
   = EType ZType
@@ -91,12 +138,41 @@ data Expr t
   | EQuote (Expr t) t
   deriving (Show, Eq, Functor, Foldable, Traversable)
 
-instance IsString (Expr ()) where
-  fromString s = ESymbol (fromString s) ()
-
 type Untyped = Expr ()
 
 type Typed = Expr ZType
+
+instance IsString Untyped where
+  fromString s = ESymbol (fromString s) ()
+
+exprIsList :: Expr a -> Bool
+exprIsList EUnit = True
+exprIsList (EPair _ EUnit _) = True
+exprIsList (EPair _ r _) = exprIsList r
+exprIsList _ = False
+
+exprMaybeList :: Expr a -> Maybe [Expr a]
+exprMaybeList EUnit = Just []
+exprMaybeList (EPair l r _) = (l :) <$> exprMaybeList r
+exprMaybeList _ = Nothing
+
+instance MaybeList Untyped where
+  isList = exprIsList
+  {-# INLINE isList #-}
+  maybeList = exprMaybeList
+  {-# INLINE maybeList #-}
+  fromList' [] = EUnit
+  fromList' (x : xs) = EPair x (fromList' xs) ()
+
+instance MaybeList Typed where
+  isList = exprIsList
+  {-# INLINE isList #-}
+  maybeList = exprMaybeList
+  {-# INLINE maybeList #-}
+  fromList' [] = EUnit
+  fromList' (x : xs) =
+    let xs' = fromList' xs
+     in EPair x xs' (ZPair (exprType x) (exprType xs'))
 
 exprType :: Typed -> ZType
 exprType (EType (ZType n)) = ZType (n + 1)
@@ -109,37 +185,6 @@ exprType (ESymbol _ t) = t
 exprType (EPair _ _ t) = t
 exprType (EApply _ _ t) = t
 exprType (EQuote _ t) = t
-
-isEList :: Expr a -> Bool
-isEList EUnit = True
-isEList (EPair _ EUnit _) = True
-isEList (EPair _ r _) = isEList r
-isEList _ = False
-
-isZList :: ZType -> Bool
-isZList ZUnit = True
-isZList (ZPair _ ZUnit) = True
-isZList (ZPair _ r) = isZList r
-isZList _ = False
-
-makeEList :: [Untyped] -> Untyped
-makeEList [] = EUnit
-makeEList (x : xs) = EPair x (makeEList xs) ()
-
-makeTypedList :: [Typed] -> Typed
-makeTypedList [] = EUnit
-makeTypedList (x : xs) =
-  let rs = makeTypedList xs
-   in EPair x rs (ZPair (exprType x) (exprType rs))
-
-makeZList :: [ZType] -> ZType
-makeZList [] = ZUnit
-makeZList (z : zs) = ZPair z (makeZList zs)
-
-maybeList :: Expr a -> Maybe [Expr a]
-maybeList EUnit = Just []
-maybeList (EPair l r _) = (l :) <$> maybeList r
-maybeList _ = Nothing
 
 stripType :: Typed -> Untyped
 stripType (EType n) = EType n
@@ -157,16 +202,13 @@ instance Render Untyped where
   render EUnit = "()"
   render (ESymbol t ()) = render t
   render (ELambda x e _ ()) = "(\\" <> render x <> " " <> render e <> ")"
-  render (ELambda' xs e _ ()) = "(\\(" <> T.intercalate " " (render <$> xs) <> ") " <> render e <> ")"
-  render p@(EPair l r ())
-    | isEList p = "(" <> render l <> go r
-    | otherwise = "(" <> render l <> " . " <> render r <> ")"
-    where
-      go EUnit = ")"
-      go (EPair a b ()) = " " <> render a <> go b
-      go _ = bug ListNotAList
+  render (ELambda' xs e _ ()) = "(\\" <> render xs <> " " <> render e <> ")"
+  render p@(EPair l r ()) =
+    case maybeList p of
+      Just xs -> render xs
+      Nothing -> render (l, r)
   render (EAnnotation e z) = "(" <> render e <> " : " <> render z <> ")"
-  render (EApply f xs ()) = "(" <> render f <> " " <> T.intercalate " " (render <$> xs) <> ")"
+  render (EApply f xs ()) = render (f : xs)
   render (EQuote t ()) = "'" <> render t
 
 render' :: Typed -> Text
@@ -176,19 +218,14 @@ instance Render Typed where
   render (EType z) = render z
   render EUnit = "()"
   render (ESymbol t z) = render t <> " : " <> render z
-  render (ELambda x e _ z) = "(\\" <> render x <> " . " <> render' e <> ") : " <> render z
-  render (ELambda' xs e _ z) =
-    "(\\(" <> T.intercalate " " (render <$> xs) <> ") . " <> render' e <> ") : " <> render z
-  render p@(EPair l r z)
-    | isEList p = "(" <> render' l <> go r
-    | otherwise = "(" <> render' l <> " . " <> render' r <> ")"
-    where
-      go EUnit = ")" <> " : " <> render z
-      go (EPair a b _) = " " <> render' a <> go b
-      go _ = bug ListNotAList
+  render (ELambda x e _ z) = "(\\" <> render x <> " " <> render' e <> ") : " <> render z
+  render (ELambda' xs e _ z) = "(\\" <> render xs <> " " <> render' e <> ") : " <> render z
+  render p@(EPair l r z) =
+    case maybeList $ stripType p of
+      Just xs -> render xs <> " : " <> render z
+      Nothing -> render (stripType l, stripType r) <> " : " <> render z
   render (EAnnotation e z) = "(" <> render' e <> " : " <> render z <> ")"
-  render (EApply f xs z) =
-    "(" <> render' f <> " " <> T.intercalate " " (render' <$> xs) <> ") : " <> render z
+  render (EApply f xs z) = render (stripType <$> f : xs) <> " : " <> render z
   render (EQuote x z) = "'" <> render' x <> " : " <> render z
 
 data LookupResult
@@ -229,6 +266,3 @@ data ZState = ZState
   deriving (Show)
 
 makeLenses ''ZState
-
-instance (Render a, Render b) => Render (a, b) where
-  render (a, b) = "(" <> render a <> ", " <> render b <> ")"

@@ -365,11 +365,11 @@ synthesize' (ELambda' xs e n ()) = do
   e' <- e `check` betaHat
   for_ (reverse alphaHats) $ \(x, _) ->
     context %= dropVar x
-  applyCtxExpr (ELambda' xs e' n (ZFunction (makeZList $ snd <$> alphaHats) betaHat))
+  applyCtxExpr (ELambda' xs e' n (ZFunction (fromList' $ snd <$> alphaHats) betaHat))
 -- ->E
 synthesize' (EApply e1 e2 ()) = do
   e1' <- synthesize e1
-  (e2', c) <- exprType e1' `applySynth` makeEList e2
+  (e2', c) <- exprType e1' `applySynth` fromList' e2
   case maybeList e2' of
     Just e2'' -> applyCtxExpr $ EApply e1' e2'' c
     Nothing -> applyCtxExpr $ EPair e1' e2' c

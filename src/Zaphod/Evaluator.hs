@@ -39,7 +39,7 @@ evaluate x = do
       case f' of
         ELambda (Variable v) e env _ -> do
           xs' <- traverse eval xs
-          local (\_ -> M.insert v (makeTypedList xs') env) $ eval e
+          local (\_ -> M.insert v (fromList' xs') env) $ eval e
         ELambda' vs e env _
           | length vs == length xs -> do
             vxs <- traverse (\(v, z) -> (v,) <$> eval z) $ zip vs xs

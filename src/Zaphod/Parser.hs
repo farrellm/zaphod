@@ -64,40 +64,40 @@ followingChar = startingChar <|> digitChar <|> char '\''
 identifier :: Parser Text
 identifier = toText <$> lexeme ((:) <$> startingChar <*> many followingChar)
 
--- Untyped
+-- Raw
 
-eUnit :: Parser Untyped
-eUnit = parens "" $> EUnit
+unit :: Parser Raw
+unit = parens "" $> RUnit
 
-ePair :: Parser Untyped
-ePair = parens (EPair <$> token <* dot <*> token <*> pure ())
+pair :: Parser Raw
+pair = parens (RPair <$> token <* dot <*> token)
 
-eSymbol :: Parser Untyped
-eSymbol = ESymbol . Symbol <$> identifier <*> pure ()
+symbol_ :: Parser Raw
+symbol_ = RSymbol . Symbol <$> identifier
 
-eList :: Parser Untyped
-eList = parens $ do
+list :: Parser Raw
+list = parens $ do
   ts <- NE.some token
-  pure (foldl' (\r l -> EPair l r ()) EUnit $ NE.reverse ts)
+  pure (foldl' (\r l -> RPair l r) RUnit $ NE.reverse ts)
 
-eTuple :: Parser Untyped
-eTuple = brackets $ do
+tuple :: Parser Raw
+tuple = brackets $ do
   ts <- many token
-  pure (foldl' (\r l -> EPair l r ()) EUnit $ reverse ("list" : ts))
+  pure (foldl' (\r l -> RPair l r) RUnit $ reverse ("list" : ts))
 
-eQuote :: Parser Untyped
-eQuote = char '\'' *> (q <$> token)
+quote :: Parser Raw
+quote = char '\'' *> (q <$> token)
   where
-    q x = (EPair "quote" (EPair x EUnit ()) ())
+    q x = (RPair "quote" (RPair x RUnit))
 
-token :: Parser Untyped
+token :: Parser Raw
 token =
-  try eUnit
-    <|> try eSymbol
-    <|> try ePair
-    <|> try eTuple
-    <|> try eList
-    <|> try eQuote
+  try unit
+    <|> try symbol_
+    <|> try pair
+    <|> try tuple
+    <|> try list
+    <|> try quote
 
-tokens :: Parser [Untyped]
+tokens :: Parser [Raw]
 tokens = many token <* eof
