@@ -1,7 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections #-}
-{-# OPTIONS_GHC -fno-warn-deprecations #-}
 
 module Zaphod.Checker (check, synthesize) where
 
@@ -23,16 +22,11 @@ data ZaphodBug
   | NotMonotype ZType
   | InvalidApply Untyped
   | NotQuotable Untyped
+  | UnexpectedUntyped Untyped
+  | UnexpectedTyped Typed
   deriving (Show)
 
 instance Exception ZaphodBug
-
-debug :: Bool
-debug = False
-
-traceM' :: Applicative f => Text -> f ()
-traceM' x = do
-  when debug . traceM $ toString x
 
 bind2 :: (Monad m) => (a -> b -> m c) -> m a -> m b -> m c
 bind2 f x y = do
@@ -86,9 +80,12 @@ applyCtxType z@(ZExistential x) = do
 applyCtxType (ZFunction a b) = ZFunction <$> applyCtxType a <*> applyCtxType b
 applyCtxType (ZPair a b) = ZPair <$> applyCtxType a <*> applyCtxType b
 applyCtxType (ZForall a t) = ZForall a <$> applyCtxType t
+applyCtxType (ZValue x) = ZValue <$> applyCtxExpr x
+applyCtxType (ZUntyped x) = bug (UnexpectedUntyped x)
 
 applyCtxExpr :: Typed -> State ZState Typed
-applyCtxExpr = traverse applyCtxType
+applyCtxExpr (EType t) = EType <$> applyCtxType t
+applyCtxExpr e = traverse applyCtxType e
 
 notInFV :: Existential -> ZType -> Bool
 notInFV _ (ZType _) = True
@@ -99,6 +96,8 @@ notInFV a (ZForall _ b) = notInFV a b
 notInFV a (ZFunction b c) = notInFV a b && notInFV a c
 notInFV a (ZPair b c) = notInFV a b && notInFV a c
 notInFV _ ZSymbol = True
+notInFV a (ZValue x) = notInFV a (exprType x)
+notInFV _ (ZUntyped x) = bug (UnexpectedUntyped x)
 
 isMonoType :: ZType -> Bool
 isMonoType ZUnit = True
@@ -207,6 +206,8 @@ subtype' (ZExistential alphaHat) a | alphaHat `notInFV` a = alphaHat `instantiat
 subtype' a (ZExistential alphaHat) | alphaHat `notInFV` a = a `instantiateR` alphaHat
 -- <:Symbol
 subtype' ZSymbol ZSymbol = pass
+-- <:Type
+subtype' (ZType m) (ZType n) | m == n = pass
 --
 subtype' a b = bug $ TypeError (render a <> " is not a subtype of " <> render b)
 
@@ -375,7 +376,26 @@ synthesize' (EApply e1 e2 ()) = do
     Nothing -> applyCtxExpr $ EPair e1' e2' c
 synthesize' p@(EPair _ _ ()) = bug (InvalidApply p)
 -- Type
-synthesize' (EType n) = pure (EType n)
+synthesize' (EType m) = EType <$> synthesizeType m
+  where
+    synthesizeType :: ZType -> State ZState ZType
+    synthesizeType (ZForall u@(Universal s) t) = do
+      let v = Variable s
+      context %= (CVariable v (ZUniversal u) <:)
+      t' <- synthesizeType t
+      context %= dropVar v
+      ZForall u <$> applyCtxType t'
+    synthesizeType (ZFunction a b) = do
+      a' <- synthesizeType a
+      b' <- synthesizeType b
+      pure (ZFunction a' b')
+    synthesizeType (ZPair a b) = do
+      a' <- synthesizeType a
+      b' <- synthesizeType b
+      pure (ZPair a' b')
+    synthesizeType (ZUntyped e) = unwrapType <$> synthesize e
+    synthesizeType (ZValue e) = bug (UnexpectedTyped e)
+    synthesizeType z = pure z
 -- Quote
 synthesize' (EQuote x ()) =
   let z = (synthesizeQuoted x)

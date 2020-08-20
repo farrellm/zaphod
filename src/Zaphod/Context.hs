@@ -25,6 +25,7 @@ data ContextBug
   | ExistentialAlreadySolved ZType Existential Context
   | UnexpectedExistentialInSolve Existential Existential
   | NotMonotype ZType
+  | WellFormedUntyped Untyped
   deriving (Show)
 
 instance Exception ContextBug
@@ -112,4 +113,6 @@ isWellFormed (ZExistential a) (Context (CSolved b _ : _)) | a == b = True
 isWellFormed z@(ZUniversal _) (Context (_ : rs)) = isWellFormed z (Context rs)
 isWellFormed z@(ZExistential _) (Context (_ : rs)) = isWellFormed z (Context rs)
 isWellFormed z@(ZForall _ _) _ = bug (NotMonotype z)
+isWellFormed (ZValue x) ctx = isWellFormed (exprType x) ctx
+isWellFormed (ZUntyped x) _ = bug (WellFormedUntyped x)
 isWellFormed _ (Context []) = False

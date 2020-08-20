@@ -3,10 +3,11 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 
-module Zaphod.Evaluator (evaluate) where
+module Zaphod.Evaluator (evaluate, evaluateType) where
 
 import qualified Data.Map as M
 import Relude.Extra.Map ((!?))
+import Zaphod.Checker
 import Zaphod.Types
 
 data EvaluatorError
@@ -14,6 +15,8 @@ data EvaluatorError
   | UnanalyzedApply Typed
   | NotLambda Typed
   | ArgumentCount Int Int
+  | InvalidType Text
+  | UnexpectedUntyped Untyped
   deriving (Show)
 
 instance Exception EvaluatorError
@@ -50,6 +53,20 @@ evaluate x = do
     eval (ELambda v e _ t) = ELambda v e <$> ask <*> pure t
     eval (ELambda' vs e _ t) = ELambda' vs e <$> ask <*> pure t
     eval (EQuote z _) = pure z
+    eval (EType t) = EType <$> evalType t
     eval e = pure e
     --
+    evalType (ZForall u@(Universal s) z) =
+      ZForall u <$> local (M.insert s (EType $ ZUniversal u)) (evalType z)
+    evalType (ZFunction a b) = ZFunction <$> evalType a <*> evalType b
+    evalType (ZPair a b) = ZPair <$> evalType a <*> evalType b
+    evalType (ZValue a) = unwrapType <$> eval a
+    evalType (ZUntyped a) = bug (UnexpectedUntyped a)
+    evalType z = pure z
+    --
     extend env (Variable v, z) = M.insert v z env
+
+evaluateType :: Untyped -> State ZState ZType
+evaluateType u = do
+  t <- check u (ZType 0)
+  unwrapType <$> evaluate t

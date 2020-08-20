@@ -6,11 +6,19 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_GHC -fno-warn-deprecations #-}
 
 module Zaphod.Types where
 
 import qualified Data.Text as T
 import Lens.Micro.TH (makeLenses)
+
+debug :: Bool
+debug = False
+
+traceM' :: Applicative f => Text -> f ()
+traceM' x = do
+  when debug . traceM $ toString x
 
 type Environment = Map Symbol Typed
 
@@ -97,6 +105,8 @@ data ZType
   | ZFunction ZType ZType
   | ZSymbol
   | ZPair ZType ZType
+  | ZValue (Expr ZType)
+  | ZUntyped (Expr ())
   deriving (Show, Eq)
 
 instance MaybeList ZType where
@@ -125,6 +135,8 @@ instance Render ZType where
     case maybeList p of
       Just xs -> render xs
       Nothing -> render (l, r)
+  render (ZValue x) = "{" <> render x <> "}"
+  render (ZUntyped x) = "{" <> render x <> "}"
 
 data Expr t
   = EType ZType
@@ -198,7 +210,7 @@ stripType (EAnnotation x t) = EAnnotation (stripType x) t
 stripType (EQuote x _) = EQuote (stripType x) ()
 
 instance Render Untyped where
-  render (EType z) = render z
+  render (EType z) = "[" <> render z <> "]"
   render EUnit = "()"
   render (ESymbol t ()) = render t
   render (ELambda x e _ ()) = "(\\" <> render x <> " " <> render e <> ")"
@@ -215,7 +227,7 @@ render' :: Typed -> Text
 render' = render . stripType
 
 instance Render Typed where
-  render (EType z) = render z
+  render (EType z) = "[" <> render z <> "]"
   render EUnit = "()"
   render (ESymbol t z) = render t <> " : " <> render z
   render (ELambda x e _ z) = "(\\" <> render x <> " " <> render' e <> ") : " <> render z
@@ -227,6 +239,10 @@ instance Render Typed where
   render (EAnnotation e z) = "(" <> render' e <> " : " <> render z <> ")"
   render (EApply f xs z) = render (stripType <$> f : xs) <> " : " <> render z
   render (EQuote x z) = "'" <> render' x <> " : " <> render z
+
+unwrapType :: Typed -> ZType
+unwrapType (EType z) = z
+unwrapType e = ZValue e
 
 data LookupResult
   = RSolved ZType
