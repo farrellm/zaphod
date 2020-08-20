@@ -1,0 +1,109 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.33.0.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: 7705142ff0535176f9d0a0e6b234b585cf4d34c4cbda695f3ee0763d0cdaa9a5
+
+name:           zaphod
+version:        0.1.0.0
+description:    Please see the README on GitHub at <https://github.com/farrellm/zaphod#readme>
+homepage:       https://github.com/farrellm/zaphod#readme
+bug-reports:    https://github.com/farrellm/zaphod/issues
+author:         Matthew Farrell
+maintainer:     farrellm@alum.mit.edu
+copyright:      2019 Matthew Farrell
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    ChangeLog.md
+
+source-repository head
+  type: git
+  location: https://github.com/farrellm/zaphod
+
+library
+  exposed-modules:
+      Prelude
+      Zaphod
+      Zaphod.Base
+      Zaphod.Checker
+      Zaphod.Context
+      Zaphod.Evaluator
+      Zaphod.Parser
+      Zaphod.Test
+      Zaphod.Types
+      Zaphod.Types.Class
+      Zaphod.Types.Context
+      Zaphod.Types.Expr
+      Zaphod.Types.Raw
+      Zaphod.Types.State
+      Zaphod.Types.Wrapper
+  other-modules:
+      Paths_zaphod
+  hs-source-dirs:
+      src
+  default-extensions: GADTs
+  build-depends:
+      base-noprelude >=4.7 && <5
+    , bifunctors
+    , containers
+    , haskeline
+    , megaparsec
+    , microlens-mtl
+    , microlens-th
+    , optparse-applicative
+    , parser-combinators
+    , relude
+    , text
+  default-language: Haskell2010
+
+executable zaphod
+  main-is: Main.hs
+  other-modules:
+      Paths_zaphod
+  hs-source-dirs:
+      app
+  default-extensions: GADTs
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      base-noprelude >=4.7 && <5
+    , bifunctors
+    , containers
+    , haskeline
+    , megaparsec
+    , microlens-mtl
+    , microlens-th
+    , optparse-applicative
+    , parser-combinators
+    , relude
+    , text
+    , zaphod
+  default-language: Haskell2010
+
+test-suite zaphod-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Paths_zaphod
+  hs-source-dirs:
+      test
+  default-extensions: GADTs
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      base-noprelude >=4.7 && <5
+    , bifunctors
+    , containers
+    , haskeline
+    , megaparsec
+    , microlens-mtl
+    , microlens-th
+    , optparse-applicative
+    , parser-combinators
+    , relude
+    , text
+    , zaphod
+  default-language: Haskell2010

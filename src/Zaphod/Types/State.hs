@@ -26,6 +26,6 @@ emptyCheckerState :: Environment -> CheckerState
 emptyCheckerState env =
   CheckerState
     { _context = Context [CEnvironment env],
-      _existentialData = 'α',
+      _existentialData = 'a',
       _depth = 0
     }

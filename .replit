@@ -1,0 +1,3 @@
+language = "haskell"
+# run = "bash run.sh"
+run = "./zaphod"
