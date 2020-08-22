@@ -4,7 +4,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -fno-warn-deprecations #-}
 
@@ -275,6 +274,10 @@ instance Render Typed where
 unwrapType :: Typed -> ZType
 unwrapType (EType z) = z
 unwrapType e = ZValue e
+
+unwrapType' :: Untyped -> ZType
+unwrapType' (EType z) = z
+unwrapType' e = ZUntyped e
 
 data LookupResult
   = RSolved ZType

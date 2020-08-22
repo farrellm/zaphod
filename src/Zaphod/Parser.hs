@@ -83,7 +83,7 @@ list = parens $ do
 tuple :: Parser Raw
 tuple = brackets $ do
   ts <- many token
-  pure (foldl' (\r l -> RPair l r) RUnit $ reverse ("list" : ts))
+  pure (foldl' (\r l -> RPair l r) RUnit $ reverse ("tuple" : ts))
 
 quote :: Parser Raw
 quote = char '\'' *> (q <$> token)

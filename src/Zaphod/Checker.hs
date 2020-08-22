@@ -386,7 +386,7 @@ synthesize' (EType m) = EType <$> synthesizeType m
     synthesizeType :: ZType -> State ZState ZType
     synthesizeType (ZForall u@(Universal s) t) = do
       let v = Variable s
-      context %= (CVariable v (ZUniversal u) <:)
+      context %= (CVariable v (ZType 0) <:)
       t' <- synthesizeType t
       context %= dropVar v
       ZForall u <$> applyCtxType t'

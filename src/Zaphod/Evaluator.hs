@@ -15,8 +15,8 @@ data EvaluatorError
   | UnanalyzedApply Typed
   | NotLambda Typed
   | ArgumentCount Int Int
-  | InvalidType Text
   | InvalidParameters Raw
+  | InvalidTuple Raw
   | UnexpectedUntyped Untyped
   deriving (Show)
 
@@ -76,17 +76,27 @@ evaluateType u = do
   t <- check u (ZType 0)
   unwrapType <$> evaluate t
 
-analyzeType :: Raw -> ZType
-analyzeType RUnit = ZUnit
-analyzeType (RSymbol x) = ZUntyped (ESymbol x ())
+analyzeType :: Raw -> State ZState ZType
+analyzeType RUnit = pure ZUnit
+analyzeType x@(RSymbol _) = ZUntyped <$> analyzeUntyped x
 analyzeType (RPair "forall" (RPair (RSymbol u) (RPair z RUnit))) =
-  ZForall (Universal u) (analyzeType z)
+  ZForall (Universal u) <$> analyzeType z
 analyzeType (RPair "->" (RPair a (RPair b RUnit))) =
-  ZFunction (analyzeType a) (analyzeType b)
-analyzeType t =
-  case maybeList t of
-    Just ts -> fromList' (analyzeType <$> ts)
-    Nothing -> bug (InvalidType $ render t)
+  ZFunction <$> analyzeType a <*> analyzeType b
+analyzeType (RPair "tuple" ts) = unwrapType' <$> mkTuple ts
+  where
+    mkTuple RUnit = pure $ EType ZUnit
+    mkTuple (RPair x xs) = do
+      x' <- analyzeUntyped x
+      xs' <- mkTuple xs
+      pure $ EApply "zcons" [x', xs'] ()
+    mkTuple _ = bug (InvalidTuple ts)
+analyzeType (RPair a b) =
+  case maybeList b of
+    Just xs ->
+      let xs' = traverse (fmap EType . analyzeType) xs
+       in ZUntyped <$> (EApply <$> analyzeUntyped a <*> xs' <*> pure ())
+    Nothing -> ZPair <$> analyzeType a <*> analyzeType b
 
 analyzeQuoted :: Raw -> Untyped
 analyzeQuoted RUnit = EUnit
@@ -108,9 +118,14 @@ analyzeUntyped (RPair "lambda" (RPair xs (RPair e RUnit))) =
     mkParams (RPair (RSymbol z) zs) = (Variable z :) <$> mkParams zs
     mkParams _ = Nothing
 analyzeUntyped (RPair ":" (RPair e (RPair t RUnit))) = do
-  let t' = analyzeType t
+  t' <- analyzeType t
   EAnnotation <$> analyzeUntyped e <*> evaluateType (EType t')
 analyzeUntyped (RPair "quote" (RPair x RUnit)) = pure $ EQuote (analyzeQuoted x) ()
+analyzeUntyped (RPair "tuple" ts) = pure (mkTuple ts)
+  where
+    mkTuple RUnit = EUnit
+    mkTuple (RPair (RSymbol s) xs) = EApply "cons" [ESymbol s (), mkTuple xs] ()
+    mkTuple _ = bug (InvalidTuple ts)
 analyzeUntyped (RPair a b) =
   case maybeList b of
     Just xs -> EApply <$> analyzeUntyped a <*> (traverse analyzeUntyped xs) <*> pure ()
