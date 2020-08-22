@@ -11,8 +11,7 @@ import Zaphod.Parser
 import Zaphod.Types
 
 data ZaphodBug
-  = InvalidType Raw
-  | InvalidParameters Raw
+  = ZaphodBug
   deriving (Show)
 
 instance Exception ZaphodBug
@@ -24,46 +23,6 @@ emptyZState =
       _environment = baseEnvironment,
       _existentialData = 'α'
     }
-
-analyzeType :: Raw -> ZType
-analyzeType RUnit = ZUnit
-analyzeType (RSymbol x) = ZUntyped (ESymbol x ())
-analyzeType (RPair "forall" (RPair (RSymbol u) (RPair z RUnit))) =
-  ZForall (Universal u) (analyzeType z)
-analyzeType (RPair "->" (RPair a (RPair b RUnit))) =
-  ZFunction (analyzeType a) (analyzeType b)
-analyzeType t =
-  case maybeList t of
-    Just ts -> fromList' (analyzeType <$> ts)
-    Nothing -> bug (InvalidType t)
-
-analyzeQuoted :: Raw -> Untyped
-analyzeQuoted RUnit = EUnit
-analyzeQuoted (RSymbol s) = ESymbol s ()
-analyzeQuoted (RPair l r) = EPair (analyzeQuoted l) (analyzeQuoted r) ()
-
-analyzeUntyped :: Raw -> State ZState Untyped
-analyzeUntyped RUnit = pure EUnit
-analyzeUntyped (RSymbol s) = pure $ ESymbol s ()
-analyzeUntyped (RPair "lambda" (RPair (RSymbol x) (RPair e RUnit))) =
-  ELambda (Variable x) <$> analyzeUntyped e <*> pure mempty <*> pure ()
-analyzeUntyped (RPair "lambda" (RPair xs (RPair e RUnit))) =
-  case mkParams xs of
-    Just ps -> ELambda' ps <$> analyzeUntyped e <*> pure mempty <*> pure ()
-    Nothing -> bug (InvalidParameters xs)
-  where
-    mkParams :: Raw -> Maybe [Variable]
-    mkParams RUnit = Just []
-    mkParams (RPair (RSymbol z) zs) = (Variable z :) <$> mkParams zs
-    mkParams _ = Nothing
-analyzeUntyped (RPair ":" (RPair e (RPair t RUnit))) = do
-  let t' = analyzeType t
-  EAnnotation <$> analyzeUntyped e <*> evaluateType (EType t')
-analyzeUntyped (RPair "quote" (RPair x RUnit)) = pure $ EQuote (analyzeQuoted x) ()
-analyzeUntyped (RPair a b) =
-  case maybeList b of
-    Just xs -> EApply <$> analyzeUntyped a <*> (traverse analyzeUntyped xs) <*> pure ()
-    Nothing -> EPair <$> analyzeUntyped a <*> analyzeUntyped b <*> pure ()
 
 test :: IO ()
 test = do
