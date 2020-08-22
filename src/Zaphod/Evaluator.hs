@@ -33,10 +33,6 @@ evaluate x = do
         Just v -> pure v
         Nothing -> bug (UndefinedVariable s)
     eval (EAnnotation v _) = pure v
-    eval (EApply (ESymbol "cons" _) [l, r] _) = do
-      l' <- eval l
-      r' <- eval r
-      pure $ EPair l' r' (ZPair (exprType l') (exprType r'))
     eval (EApply f xs _) = do
       f' <- eval f
       case f' of
@@ -48,6 +44,14 @@ evaluate x = do
             vxs <- traverse (\(v, z) -> (v,) <$> eval z) $ zip vs xs
             local (\_ -> foldl' extend env vxs) $ eval e
           | otherwise -> bug (ArgumentCount (length vs) (length xs))
+        ENative1 (Native1 g) _ ->
+          case xs of
+            [a] -> g <$> eval a
+            _ -> bug (ArgumentCount 1 (length xs))
+        ENative2 (Native2 g) _ ->
+          case xs of
+            [a, b] -> g <$> eval a <*> eval b
+            _ -> bug (ArgumentCount 2 (length xs))
         _ -> bug (NotLambda f)
     eval p@(EPair _ _ _) = bug (UnanalyzedApply p)
     eval (ELambda v e _ t) = ELambda v e <$> ask <*> pure t

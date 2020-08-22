@@ -11,6 +11,7 @@
 module Zaphod.Types where
 
 import qualified Data.Text as T
+import qualified GHC.Show
 import Lens.Micro.TH (makeLenses)
 
 debug :: Bool
@@ -19,6 +20,11 @@ debug = False
 traceM' :: Applicative f => Text -> f ()
 traceM' x = do
   when debug . traceM $ toString x
+
+data TypesBug = EqUndefined
+  deriving (Show)
+
+instance Exception TypesBug
 
 type Environment = Map Symbol Typed
 
@@ -148,7 +154,25 @@ data Expr t
   | EPair (Expr t) (Expr t) t
   | EAnnotation (Expr t) ZType
   | EQuote (Expr t) t
+  | ENative1 Native1 t
+  | ENative2 Native2 t
   deriving (Show, Eq, Functor, Foldable, Traversable)
+
+newtype Native1 = Native1 (Typed -> Typed)
+
+instance Eq Native1 where
+  _ == _ = bug EqUndefined
+
+instance Show Native1 where
+  show _ = "Native1 <native1>"
+
+newtype Native2 = Native2 (Typed -> Typed -> Typed)
+
+instance Eq Native2 where
+  _ == _ = bug EqUndefined
+
+instance Show Native2 where
+  show _ = "Native2 <native2>"
 
 type Untyped = Expr ()
 
@@ -197,6 +221,8 @@ exprType (ESymbol _ t) = t
 exprType (EPair _ _ t) = t
 exprType (EApply _ _ t) = t
 exprType (EQuote _ t) = t
+exprType (ENative1 _ t) = t
+exprType (ENative2 _ t) = t
 
 stripType :: Typed -> Untyped
 stripType (EType n) = EType n
@@ -208,6 +234,8 @@ stripType (EApply f xs _) = EApply (stripType f) (stripType <$> xs) ()
 stripType (EPair x y _) = EPair (stripType x) (stripType y) ()
 stripType (EAnnotation x t) = EAnnotation (stripType x) t
 stripType (EQuote x _) = EQuote (stripType x) ()
+stripType (ENative1 f _) = ENative1 f ()
+stripType (ENative2 f _) = ENative2 f ()
 
 instance Render Untyped where
   render (EType z) = "[" <> render z <> "]"
@@ -222,6 +250,8 @@ instance Render Untyped where
   render (EAnnotation e z) = "(" <> render e <> " : " <> render z <> ")"
   render (EApply f xs ()) = render (f : xs)
   render (EQuote t ()) = "'" <> render t
+  render (ENative1 _ ()) = "<native1>"
+  render (ENative2 _ ()) = "<native2>"
 
 render' :: Typed -> Text
 render' = render . stripType
@@ -239,6 +269,8 @@ instance Render Typed where
   render (EAnnotation e z) = "(" <> render' e <> " : " <> render z <> ")"
   render (EApply f xs z) = render (stripType <$> f : xs) <> " : " <> render z
   render (EQuote x z) = "'" <> render' x <> " : " <> render z
+  render (ENative1 _ z) = "<native1> : " <> render z
+  render (ENative2 _ z) = "<native2> : " <> render z
 
 unwrapType :: Typed -> ZType
 unwrapType (EType z) = z

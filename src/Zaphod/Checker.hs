@@ -24,6 +24,7 @@ data ZaphodBug
   | NotQuotable Untyped
   | UnexpectedUntyped Untyped
   | UnexpectedTyped Typed
+  | Native
   deriving (Show)
 
 instance Exception ZaphodBug
@@ -324,6 +325,8 @@ check' (ELambda x e n ()) z@(ZFunction a b) = do
   e'' <- applyCtxExpr e'
   context %= dropVar x
   applyCtxExpr (ELambda x e'' n z)
+check' (ENative1 _ ()) _ = bug Native
+check' (ENative2 _ ()) _ = bug Native
 -- ->Pair
 check' (EPair e1 e2 ()) (ZPair b1 b2) = do
   a1' <- e1 `check` b1
@@ -358,6 +361,8 @@ synthesize' (ELambda x e n ()) = do
   e' <- e `check` betaHat
   context %= dropVar x
   applyCtxExpr (ELambda x e' n (ZFunction alphaHat betaHat))
+synthesize' (ENative1 _ ()) = bug Native
+synthesize' (ENative2 _ ()) = bug Native
 synthesize' (ELambda' xs e n ()) = do
   alphaHats <- forM xs $ \x -> (x,) . ZExistential <$> nextExtential
   betaHat <- ZExistential <$> nextExtential
