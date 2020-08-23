@@ -95,9 +95,9 @@ analyzeType (RPair "tuple" ts) = unwrapType' <$> mkTuple ts
   where
     mkTuple RUnit = pure $ EType ZUnit
     mkTuple (RPair x xs) = do
-      x' <- analyzeUntyped x
+      x' <- analyzeType x
       xs' <- mkTuple xs
-      pure $ EApply "zcons" [x', xs'] ()
+      pure $ EApply "zcons" [EType x', xs'] ()
     mkTuple _ = bug (InvalidTuple ts)
 analyzeType (RPair a b) =
   case maybeList b of
