@@ -17,8 +17,8 @@ instance Exception ZaphodError
 
 data ZaphodBug
   = MissingSubtypeCase ZType ZType Context
-  | MissingApplySynthCase ZType Untyped Context
   | MissingExistentialInContext Existential Context
+  | CannotApply ZType Untyped
   | NotMonotype ZType
   | InvalidApply Untyped
   | NotQuotable Untyped
@@ -92,6 +92,7 @@ applyCtxExpr e = traverse applyCtxType e
 
 notInFV :: Existential -> ZType -> Bool
 notInFV _ (ZType _) = True
+notInFV _ ZTop = True
 notInFV _ ZUnit = True
 notInFV _ (ZUniversal _) = True
 notInFV a (ZExistential b) = a /= b
@@ -101,9 +102,9 @@ notInFV a (ZPair b c) = notInFV a b && notInFV a c
 notInFV _ ZSymbol = True
 notInFV a (ZValue x) = notInFV a (exprType x)
 notInFV _ (ZUntyped x) = bug (UnexpectedUntyped x)
-notInFV _ ZTop = True
 
 isMonoType :: ZType -> Bool
+isMonoType ZTop = True
 isMonoType ZUnit = True
 isMonoType ZSymbol = True
 isMonoType (ZUniversal _) = True
@@ -439,6 +440,4 @@ applySynth' (ZFunction a c) e = do
   e' <- e `check` a
   (,) <$> applyCtxExpr e' <*> applyCtxType c
 --
-applySynth' t e = do
-  ctx <- use context
-  bug $ MissingApplySynthCase t e ctx
+applySynth' t e = bug $ CannotApply t e
