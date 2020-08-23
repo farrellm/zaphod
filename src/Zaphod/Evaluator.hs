@@ -129,10 +129,13 @@ analyzeUntyped (RPair ":" (RPair e (RPair t RUnit))) = do
   t' <- analyzeType t
   EAnnotation <$> analyzeUntyped e <*> evaluateType (EType t')
 analyzeUntyped (RPair "quote" (RPair x RUnit)) = pure $ EQuote (analyzeQuoted x) ()
-analyzeUntyped (RPair "tuple" ts) = pure (mkTuple ts)
+analyzeUntyped (RPair "tuple" ts) = mkTuple ts
   where
-    mkTuple RUnit = EUnit
-    mkTuple (RPair (RSymbol s) xs) = EApply "cons" [ESymbol s (), mkTuple xs] ()
+    mkTuple RUnit = pure EUnit
+    mkTuple (RPair e xs) = do
+      e' <- analyzeUntyped e
+      xs' <- mkTuple xs
+      pure $ EApply "cons" [e', xs'] ()
     mkTuple _ = bug (InvalidTuple ts)
 analyzeUntyped (RPair a b) =
   case maybeList b of

@@ -115,6 +115,7 @@ test = do
   print' (parseTest annUnit)
   print' (parseTest annUnit')
   print' (parseTest annLambda)
+  print' (parseTest annLambda2)
   print' (parseTest appLambda2')
   print' (parseTest appLambda2'')
   print' (parseTest qSym)
@@ -135,6 +136,7 @@ test = do
   print' (analyzed annUnit)
   print' (analyzed annUnit')
   print' (analyzed annLambda)
+  print' (analyzed annLambda2)
   print' (analyzed appLambda2')
   print' (analyzed appLambda2'')
   print' (analyzed appLambda2''')
@@ -154,11 +156,13 @@ test = do
   print' (synthesized appLambda)
   print' (synthesized appLambda2)
   print' (synthesized annLambda)
+  print' (synthesized annLambda2)
   print' (synthesized appLambda2')
   print' (synthesized appLambda2'')
   print' (synthesized appLambda2''')
   print' (synthesized qSym)
   putStrLn "-"
+  print' (evaluated annLambda2)
   print' (evaluated appLambda)
   print' (evaluated appLambda2)
   print' (evaluated appLambda2)
@@ -186,6 +190,7 @@ test = do
     annUnit = "(: () ())"
     annUnit' = "(: () [])"
     annLambda = "(: (lambda (x) x) (forall a (-> [a] a)))"
+    annLambda2 = "(: (lambda (x) x) (-> [()] ()))"
     appLambda2' = "((lambda (x) (lambda (y) (cons x y))) ())"
     appLambda2'' = "(((lambda (x) (lambda (y) (cons x y))) ()) ())"
     appLambda2''' = "(((lambda (x) (lambda (y) [x y])) ()) ())"
