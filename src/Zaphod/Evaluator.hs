@@ -3,11 +3,19 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 
-module Zaphod.Evaluator (evaluate, evaluateType, analyzeUntyped) where
+module Zaphod.Evaluator
+  ( evaluate,
+    evaluateType,
+    evaluateTopLevel,
+    analyzeUntyped,
+  )
+where
 
 import qualified Data.Map as M
+import Lens.Micro.Mtl ((%=))
 import Relude.Extra.Map ((!?))
 import Zaphod.Checker
+import Zaphod.Context ((<:))
 import Zaphod.Types
 
 data EvaluatorError
@@ -130,3 +138,11 @@ analyzeUntyped (RPair a b) =
   case maybeList b of
     Just xs -> EApply <$> analyzeUntyped a <*> (traverse analyzeUntyped xs) <*> pure ()
     Nothing -> EPair <$> analyzeUntyped a <*> analyzeUntyped b <*> pure ()
+
+evaluateTopLevel :: (MonadState ZState m, MonadIO m) => Raw -> m Typed
+evaluateTopLevel (RPair "def" (RPair (RSymbol s) (RPair e RUnit))) = do
+  e' <- evaluate =<< synthesize =<< analyzeUntyped e
+  context %= (CVariable (Variable s) (exprType e') <:)
+  environment %= M.insert s e'
+  pure EUnit
+evaluateTopLevel e = evaluate =<< synthesize =<< analyzeUntyped e

@@ -36,9 +36,6 @@ emptyZState =
       _existentialData = 'α'
     }
 
-evalRaw :: (MonadState ZState m, MonadIO m) => Raw -> m Typed
-evalRaw = evaluate <=< synthesize <=< analyzeUntyped
-
 repl :: forall m. (MonadState ZState m, MonadException m, MonadIO m) => Maybe Text -> m ()
 repl _ = do
   z <- get
@@ -59,7 +56,7 @@ repl _ = do
           loop z'
     go z r =
       handle (logBug z) $ do
-        (r', z') <- runStateT (evalRaw r) z
+        (r', z') <- runStateT (evaluateTopLevel r) z
         putTextLn (render r')
         pure z'
     logBug :: ZState -> Bug -> InputT m ZState
@@ -76,7 +73,7 @@ runFile p = do
   traverse_ go zs
   where
     go r = do
-      r' <- evalRaw r
+      r' <- evaluateTopLevel r
       putTextLn (render r')
 
 zaphod :: IO ()
