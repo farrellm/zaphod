@@ -22,17 +22,26 @@ za = ZUniversal a
 zb :: ZType
 zb = ZUniversal b
 
-zPair :: ZType -> ZType -> ZType
-zPair l r = ZPair l $ ZPair r ZUnit
+zTuple1 :: ZType -> ZType
+zTuple1 x = ZPair x ZUnit
+
+zTuple2 :: ZType -> ZType -> ZType
+zTuple2 x y = ZPair x $ zTuple1 y
+
+zTuple3 :: ZType -> ZType -> ZType -> ZType
+zTuple3 x y z = ZPair x $ zTuple2 y z
 
 zCons :: ZType
-zCons = ZForall a . ZForall b $ ZFunction (zPair za zb) (ZPair za zb)
+zCons = ZForall a . ZForall b $ ZFunction (zTuple2 za zb) (ZPair za zb)
 
 zZCons :: ZType
-zZCons = ZFunction (zPair (ZType 0) (ZType 0)) (ZType 0)
+zZCons = ZFunction (zTuple2 (ZType 0) (ZType 0)) (ZType 0)
 
 zUnsafeCoerce :: ZType
 zUnsafeCoerce = ZForall a . ZForall b $ ZFunction za zb
+
+zIfNil :: ZType
+zIfNil = ZForall a . ZForall b $ ZFunction (zTuple3 za zb zb) zb
 
 baseContext :: Context
 baseContext =
@@ -40,7 +49,8 @@ baseContext =
     [ CVariable (Variable "Top") ZTop,
       CVariable (Variable "cons") zCons,
       CVariable (Variable "zcons") zZCons,
-      CVariable (Variable "unsafe-coerce") zUnsafeCoerce
+      CVariable (Variable "unsafe-coerce") zUnsafeCoerce,
+      CVariable (Variable "if-nil") zIfNil
     ]
 
 -- [ CVariable

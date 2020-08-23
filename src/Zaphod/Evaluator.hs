@@ -41,7 +41,15 @@ evaluate x = do
       case m of
         Just v -> pure v
         Nothing -> bug (UndefinedVariable s)
-    eval (EAnnotation v _) = pure v
+    eval (EAnnotation v z) = const z <<$>> eval v
+    eval (EApply (ESymbol "if-nil" _) xs _) =
+      case xs of
+        [p, a, b] -> do
+          p' <- eval p
+          case p' of
+            EUnit -> eval a
+            _ -> eval b
+        _ -> bug (ArgumentCount 3 (length xs))
     eval (EApply f xs _) = do
       f' <- eval f
       case f' of
