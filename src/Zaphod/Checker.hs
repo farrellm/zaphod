@@ -83,6 +83,7 @@ applyCtxType (ZPair a b) = ZPair <$> applyCtxType a <*> applyCtxType b
 applyCtxType (ZForall a t) = ZForall a <$> applyCtxType t
 applyCtxType (ZValue x) = ZValue <$> applyCtxExpr x
 applyCtxType (ZUntyped x) = bug (UnexpectedUntyped x)
+applyCtxType ZTop = pure ZTop
 
 applyCtxExpr :: (MonadState ZState m) => Typed -> m Typed
 applyCtxExpr (EType t) = EType <$> applyCtxType t
@@ -99,6 +100,7 @@ notInFV a (ZPair b c) = notInFV a b && notInFV a c
 notInFV _ ZSymbol = True
 notInFV a (ZValue x) = notInFV a (exprType x)
 notInFV _ (ZUntyped x) = bug (UnexpectedUntyped x)
+notInFV _ ZTop = True
 
 isMonoType :: ZType -> Bool
 isMonoType ZUnit = True
@@ -180,6 +182,8 @@ applySynth a b = do
   pure res
 
 subtype' :: (MonadState ZState m) => ZType -> ZType -> m ()
+-- <:Top
+subtype' _ ZTop = pass
 -- <:Var
 subtype' (ZUniversal alpha) (ZUniversal beta) | alpha == beta = pass
 -- <:Unit
@@ -348,7 +352,7 @@ synthesize' (ESymbol a ()) = do
 -- Anno
 synthesize' (EAnnotation e a) = do
   e' <- e `check` a
-  applyCtxExpr e'
+  applyCtxExpr (const a <$> e')
 -- 1|=>
 synthesize' EUnit = pure EUnit
 -- ->|=>

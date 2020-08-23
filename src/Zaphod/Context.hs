@@ -102,6 +102,7 @@ solveExistential z e ctx@(Context cs) = Context $ go cs
     go [] = bug $ MissingExistentialInContext e ctx
 
 isWellFormed :: ZType -> Context -> Bool
+isWellFormed ZTop _ = True
 isWellFormed ZUnit _ = True
 isWellFormed ZSymbol _ = True
 isWellFormed (ZFunction a b) ctx = isWellFormed a ctx && isWellFormed b ctx

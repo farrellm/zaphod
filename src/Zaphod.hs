@@ -161,6 +161,7 @@ test = do
   print' (synthesized appLambda2'')
   print' (synthesized appLambda2''')
   print' (synthesized qSym)
+  print' (synthesized top)
   putStrLn "-"
   print' (evaluated annLambda2)
   print' (evaluated appLambda)
@@ -173,6 +174,7 @@ test = do
   print' (evaluated qSym')
   print' (evaluated qNested)
   print' (evaluated qNested')
+  print' (evaluated top)
   where
     print' :: (Render a) => a -> IO ()
     print' = putTextLn . render
@@ -198,6 +200,7 @@ test = do
     qSym' = "'x"
     qNested = "(quote (x (a b) y z))"
     qNested' = "'(x (a b) y z)"
+    top = "(: [() ()] Top)"
     -- lambda2p = "(\\x.(\\y.(x.y)))"
     parseTest t = unsafePerformIO $ case parse token "" t of
       Left e -> die (errorBundlePretty e)

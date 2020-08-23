@@ -37,7 +37,8 @@ zUnsafeCoerce = ZForall a . ZForall b $ ZFunction za zb
 baseContext :: Context
 baseContext =
   Context
-    [ CVariable (Variable "cons") zCons,
+    [ CVariable (Variable "Top") ZTop,
+      CVariable (Variable "cons") zCons,
       CVariable (Variable "zcons") zZCons,
       CVariable (Variable "unsafe-coerce") zUnsafeCoerce
     ]
@@ -53,7 +54,8 @@ baseContext =
 baseEnvironment :: Environment
 baseEnvironment =
   M.fromList
-    [ ("cons", ENative2 (Native2 $ \l r -> EPair l r (ZPair (exprType l) (exprType r))) zCons),
+    [ ("Top", EType ZTop),
+      ("cons", ENative2 (Native2 $ \l r -> EPair l r (ZPair (exprType l) (exprType r))) zCons),
       ("zcons", ENative2 (Native2 $ \l r -> EType (ZPair (getType l) (getType r))) zZCons),
       ("unsafe-coerce", ELambda (Variable "x") (ESymbol "x" zb) mempty zUnsafeCoerce)
     ]

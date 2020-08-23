@@ -112,6 +112,7 @@ data ZType
   | ZPair ZType ZType
   | ZValue (Expr ZType)
   | ZUntyped (Expr ())
+  | ZTop
   deriving (Show, Eq)
 
 instance MaybeList ZType where
@@ -142,6 +143,7 @@ instance Render ZType where
       Nothing -> render (l, r)
   render (ZValue x) = "{" <> render x <> "}"
   render (ZUntyped x) = "{" <> render x <> "}"
+  render ZTop = "Top"
 
 data Expr t
   = EType ZType
