@@ -87,6 +87,7 @@ applyCtxType ZTop = pure ZTop
 
 applyCtxExpr :: (MonadState ZState m) => Typed -> m Typed
 applyCtxExpr (EType t) = EType <$> applyCtxType t
+applyCtxExpr (EAnnotation e t) = EAnnotation <$> applyCtxExpr e <*> applyCtxType t
 applyCtxExpr e = traverse applyCtxType e
 
 notInFV :: Existential -> ZType -> Bool
@@ -352,7 +353,7 @@ synthesize' (ESymbol a ()) = do
 -- Anno
 synthesize' (EAnnotation e a) = do
   e' <- e `check` a
-  applyCtxExpr (const a <$> e')
+  applyCtxExpr (EAnnotation e' a)
 -- 1|=>
 synthesize' EUnit = pure EUnit
 -- ->|=>
