@@ -1,17 +1,29 @@
+{-# LANGUAGE ApplicativeDo #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Zaphod where
 
+import Options.Applicative
+import System.Console.Haskeline
 import System.IO.Unsafe (unsafePerformIO)
 import Text.Megaparsec (errorBundlePretty, parse)
 import Zaphod.Base
 import Zaphod.Checker
 import Zaphod.Evaluator
-import Zaphod.Parser
+import Zaphod.Parser (token, tokens)
 import Zaphod.Types
 
 data ZaphodBug
   = ZaphodBug
+  deriving (Show)
+
+data ZaphodOptions = ZaphodOptions
+  { _path :: Maybe FilePath,
+    _repl :: Bool
+  }
   deriving (Show)
 
 instance Exception ZaphodBug
@@ -23,6 +35,74 @@ emptyZState =
       _environment = baseEnvironment,
       _existentialData = 'α'
     }
+
+evalRaw :: (MonadState ZState m, MonadIO m) => Raw -> m Typed
+evalRaw = evaluate <=< synthesize <=< analyzeUntyped
+
+repl :: forall m. (MonadState ZState m, MonadException m, MonadIO m) => Maybe Text -> m ()
+repl _ = do
+  z <- get
+  z' <- runInputT defaultSettings (loop z)
+  put z'
+  where
+    loop :: ZState -> InputT m ZState
+    loop z = do
+      minput <- getInputLine "> "
+      case minput of
+        Nothing -> pure z
+        Just ":quit" -> pure z
+        Just input -> do
+          rs <- case parse tokens "<repl>" (toText input) of
+            Left e -> die (errorBundlePretty e)
+            Right v -> pure v
+          z' <- foldlM go z rs
+          loop z'
+    go z r =
+      handle (logBug z) $ do
+        (r', z') <- runStateT (evalRaw r) z
+        putTextLn (render r')
+        pure z'
+    logBug :: ZState -> Bug -> InputT m ZState
+    logBug z b = do
+      print b
+      pure z
+
+runFile :: (MonadState ZState m, MonadIO m) => FilePath -> m ()
+runFile p = do
+  t <- readFileText p
+  zs <- case parse tokens p t of
+    Left e -> die (errorBundlePretty e)
+    Right v -> pure v
+  traverse_ go zs
+  where
+    go r = do
+      r' <- evalRaw r
+      putTextLn (render r')
+
+zaphod :: IO ()
+zaphod = do
+  args <- execParser opts
+  case _path args of
+    Just p -> evaluatingStateT emptyZState $ do
+      runFile "prelude.zfd"
+      runFile p
+      when (_repl args) $ repl Nothing
+    Nothing -> evaluatingStateT emptyZState $ do
+      runFile "prelude.zfd"
+      repl Nothing
+  where
+    opts =
+      info
+        (zaphodOptions <**> helper)
+        ( fullDesc -- <> progDesc "Interpreter for Zaphod"
+            <> header "zaphod - an interpreter for Zaphod"
+        )
+
+zaphodOptions :: Parser ZaphodOptions
+zaphodOptions = do
+  _repl <- switch (long "repl" <> help "drop into a REPL after running file")
+  _path <- optional (strArgument (metavar "PATH" <> help "file to interpret"))
+  pure ZaphodOptions {..}
 
 test :: IO ()
 test = do
@@ -94,7 +174,7 @@ test = do
   print' (evaluated qNested')
   where
     print' :: (Render a) => a -> IO ()
-    print' = putStrLn . toString . render
+    print' = putTextLn . render
     --
     unit = "()"
     pair = "(().())"

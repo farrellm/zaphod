@@ -25,9 +25,11 @@ default-extensions:
 dependencies:
 - base-noprelude >= 4.7 && < 5
 - containers
+- haskeline
 - microlens-mtl
 - microlens-th
 - megaparsec
+- optparse-applicative
 - parser-combinators
 - relude
 - text

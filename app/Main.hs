@@ -1,6 +1,6 @@
 module Main where
 
-import Zaphod (test)
+import Zaphod (zaphod)
 
 main :: IO ()
-main = test
+main = zaphod

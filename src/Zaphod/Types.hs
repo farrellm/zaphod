@@ -257,7 +257,7 @@ render' = render . stripType
 
 instance Render Typed where
   render (EType z) = "[" <> render z <> "]"
-  render EUnit = "()"
+  render EUnit = "() : ()"
   render (ESymbol t z) = render t <> " : " <> render z
   render (ELambda x e _ z) = "(\\" <> render x <> " " <> render' e <> ") : " <> render z
   render (ELambda' xs e _ z) = "(\\" <> render xs <> " " <> render' e <> ") : " <> render z

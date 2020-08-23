@@ -71,12 +71,12 @@ evaluate x = do
     --
     extend env (Variable v, z) = M.insert v z env
 
-evaluateType :: Untyped -> State ZState ZType
+evaluateType :: (MonadState ZState m) => Untyped -> m ZType
 evaluateType u = do
   t <- check u (ZType 0)
   unwrapType <$> evaluate t
 
-analyzeType :: Raw -> State ZState ZType
+analyzeType :: (MonadState ZState m) => Raw -> m ZType
 analyzeType RUnit = pure ZUnit
 analyzeType x@(RSymbol _) = ZUntyped <$> analyzeUntyped x
 analyzeType (RPair "forall" (RPair (RSymbol u) (RPair z RUnit))) =
@@ -103,7 +103,7 @@ analyzeQuoted RUnit = EUnit
 analyzeQuoted (RSymbol s) = ESymbol s ()
 analyzeQuoted (RPair l r) = EPair (analyzeQuoted l) (analyzeQuoted r) ()
 
-analyzeUntyped :: Raw -> State ZState Untyped
+analyzeUntyped :: (MonadState ZState m) => Raw -> m Untyped
 analyzeUntyped RUnit = pure EUnit
 analyzeUntyped (RSymbol s) = pure $ ESymbol s ()
 analyzeUntyped (RPair "lambda" (RPair (RSymbol x) (RPair e RUnit))) =
