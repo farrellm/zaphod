@@ -20,7 +20,9 @@ traceM' :: Applicative f => Text -> f ()
 traceM' x = do
   when debug . traceM $ toString x
 
-data TypesBug = EqUndefined
+data TypesBug
+  = EqUndefined
+  | StripTypeSpecial
   deriving (Show)
 
 instance Exception TypesBug
@@ -157,6 +159,7 @@ data Expr t
   | EQuote (Expr t) t
   | ENative1 Native1 t
   | ENative2 Native2 t
+  | ESpecial t
   deriving (Show, Eq, Functor, Foldable, Traversable)
 
 newtype Native1 = Native1 (Typed -> Typed)
@@ -224,6 +227,7 @@ exprType (EApply _ _ t) = t
 exprType (EQuote _ t) = t
 exprType (ENative1 _ t) = t
 exprType (ENative2 _ t) = t
+exprType (ESpecial t) = t
 
 stripType :: Typed -> Untyped
 stripType (EType n) = EType n
@@ -237,6 +241,7 @@ stripType (EAnnotation x t) = EAnnotation (stripType x) t
 stripType (EQuote x _) = EQuote (stripType x) ()
 stripType (ENative1 f _) = ENative1 f ()
 stripType (ENative2 f _) = ENative2 f ()
+stripType (ESpecial _) = bug StripTypeSpecial
 
 instance Render Untyped where
   render (EType z) = "[" <> render z <> "]"
@@ -253,6 +258,7 @@ instance Render Untyped where
   render (EQuote t ()) = "'" <> render t
   render (ENative1 _ ()) = "<native1>"
   render (ENative2 _ ()) = "<native2>"
+  render (ESpecial ()) = "<special>"
 
 render' :: Typed -> Text
 render' = render . stripType
@@ -272,6 +278,7 @@ instance Render Typed where
   render (EQuote x z) = "'" <> render' x <> " : " <> render z
   render (ENative1 _ z) = "<native1> : " <> render z
   render (ENative2 _ z) = "<native2> : " <> render z
+  render (ESpecial z) = "<special> : " <> render z
 
 unwrapType :: Typed -> ZType
 unwrapType (EType z) = z
@@ -293,6 +300,7 @@ data ContextEntry
   | CMarker Existential
   | CUniversal Universal
   | CVariable Variable ZType
+  | CEnvironment Environment
   deriving (Show)
 
 instance Render ContextEntry where
@@ -301,6 +309,7 @@ instance Render ContextEntry where
   render (CMarker a) = ">" <> render a
   render (CUniversal a) = render a
   render (CVariable a b) = render a <> ":" <> render b
+  render (CEnvironment _) = "<env>"
 
 newtype Context = Context [ContextEntry]
   deriving (Show)
@@ -312,10 +321,23 @@ data Hole = Hole Existential [ContextEntry]
   deriving (Show)
 
 data ZState = ZState
-  { _context :: Context,
-    _environment :: Environment,
-    _existentialData :: Char
+  { _environment :: Environment
   }
   deriving (Show)
 
 makeLenses ''ZState
+
+data CheckerState = CheckerState
+  { _context :: Context,
+    _existentialData :: Char
+  }
+  deriving (Show)
+
+makeLenses ''CheckerState
+
+emptyCheckerState :: Environment -> CheckerState
+emptyCheckerState env =
+  CheckerState
+    { _context = Context [CEnvironment env],
+      _existentialData = 'α'
+    }

@@ -15,6 +15,7 @@ module Zaphod.Context
   )
 where
 
+import qualified Data.Map as M
 import Zaphod.Types
 
 data ContextBug
@@ -58,6 +59,9 @@ lookupVar t (Context es) = go es
     go [] = Nothing
     go (CVariable k v : _)
       | k == t = Just v
+    go (CEnvironment env : rs) = case M.lookup (getVariable t) env of
+      Just v -> Just $ exprType v
+      Nothing -> go rs
     go (_ : rs) = go rs
 
 (<:) :: ContextEntry -> Context -> Context

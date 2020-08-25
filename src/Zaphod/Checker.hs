@@ -25,6 +25,7 @@ data ZaphodBug
   | UnexpectedUntyped Untyped
   | UnexpectedTyped Typed
   | Native
+  | Special
   deriving (Show)
 
 instance Exception ZaphodBug
@@ -35,14 +36,14 @@ bind2 f x y = do
   y' <- y
   f x' y'
 
-nextExtential :: (MonadState ZState m) => m Existential
+nextExtential :: (MonadState CheckerState m) => m Existential
 nextExtential = do
   c <- existentialData <<%= succ
   let n = Existential $ fromString [c]
   context %= (CUnsolved n <:)
   pure n
 
-markExtential :: (MonadState ZState m) => (Existential -> m a) -> m a
+markExtential :: (MonadState CheckerState m) => (Existential -> m a) -> m a
 markExtential x = do
   c <- existentialData <<%= succ
   let n = Existential $ fromString [c]
@@ -52,7 +53,7 @@ markExtential x = do
   context %= dropMarker n
   pure res
 
-withHole :: (MonadState ZState m) => Existential -> m a -> m a
+withHole :: (MonadState CheckerState m) => Existential -> m a -> m a
 withHole e x = do
   (h, ctx) <- wind e <$> use context
   context .= ctx
@@ -60,14 +61,14 @@ withHole e x = do
   context %= unwind h
   pure res
 
-withUniversal :: (MonadState ZState m) => Universal -> m a -> m a
+withUniversal :: (MonadState CheckerState m) => Universal -> m a -> m a
 withUniversal alpha x = do
   context %= (CUniversal alpha <:)
   res <- x
   context %= dropUniversal alpha
   pure res
 
-applyCtxType :: (MonadState ZState m) => ZType -> m ZType
+applyCtxType :: (MonadState CheckerState m) => ZType -> m ZType
 applyCtxType z@(ZType _) = pure z
 applyCtxType z@(ZUniversal _) = pure z
 applyCtxType ZUnit = pure ZUnit
@@ -85,7 +86,7 @@ applyCtxType (ZValue x) = ZValue <$> applyCtxExpr x
 applyCtxType (ZUntyped x) = bug (UnexpectedUntyped x)
 applyCtxType ZTop = pure ZTop
 
-applyCtxExpr :: (MonadState ZState m) => Typed -> m Typed
+applyCtxExpr :: (MonadState CheckerState m) => Typed -> m Typed
 applyCtxExpr (EType t) = EType <$> applyCtxType t
 applyCtxExpr (EAnnotation e t) = EAnnotation <$> applyCtxExpr e <*> applyCtxType t
 applyCtxExpr e = traverse applyCtxType e
@@ -113,7 +114,7 @@ isMonoType (ZFunction a b) = isMonoType a && isMonoType b
 isMonoType (ZPair a b) = isMonoType a && isMonoType b
 isMonoType _ = False
 
-isDeeper :: (MonadState ZState m) => ZType -> Existential -> m Bool
+isDeeper :: (MonadState CheckerState m) => ZType -> Existential -> m Bool
 isDeeper tau alphaHat = do
   ctx <- _context <$> get
   let ctx' = dropExistential ctx
@@ -124,7 +125,7 @@ isDeeper tau alphaHat = do
     dropExistential (Context (CUnsolved b : rs)) | alphaHat == b = Context rs
     dropExistential (Context (_ : rs)) = dropExistential $ Context rs
 
-subtype :: (MonadState ZState m) => ZType -> ZType -> m ()
+subtype :: (MonadState CheckerState m) => ZType -> ZType -> m ()
 subtype a b = do
   ctx <- use context
   traceM' ("<sub " <> render a <> " <: " <> render b)
@@ -133,7 +134,7 @@ subtype a b = do
   ctx' <- use context
   traceM' ("     " <> render ctx')
 
-instantiateL :: (MonadState ZState m) => Existential -> ZType -> m ()
+instantiateL :: (MonadState CheckerState m) => Existential -> ZType -> m ()
 instantiateL a b = do
   ctx <- use context
   traceM' ("<inL " <> render a <> " <: " <> render b)
@@ -142,7 +143,7 @@ instantiateL a b = do
   ctx' <- use context
   traceM' (">    " <> render ctx')
 
-instantiateR :: (MonadState ZState m) => ZType -> Existential -> m ()
+instantiateR :: (MonadState CheckerState m) => ZType -> Existential -> m ()
 instantiateR a b = do
   ctx <- use context
   traceM' ("<inR " <> render a <> " := " <> render b)
@@ -151,7 +152,7 @@ instantiateR a b = do
   ctx' <- use context
   traceM' (">    " <> render ctx')
 
-check :: (MonadState ZState m) => Untyped -> ZType -> m Typed
+check :: (MonadState CheckerState m) => Untyped -> ZType -> m Typed
 check a b = do
   ctx <- use context
   traceM' ("<chk " <> render a <> " =: " <> render b)
@@ -161,7 +162,7 @@ check a b = do
   traceM' (">    " <> render ctx')
   pure res
 
-synthesize :: (MonadState ZState m) => Untyped -> m Typed
+synthesize :: (MonadState CheckerState m) => Untyped -> m Typed
 synthesize a = do
   ctx <- use context
   traceM' ("<syn " <> render a)
@@ -172,7 +173,7 @@ synthesize a = do
   traceM' ("     " <> render ctx')
   pure res
 
-applySynth :: (MonadState ZState m) => ZType -> Untyped -> m (Typed, ZType)
+applySynth :: (MonadState CheckerState m) => ZType -> Untyped -> m (Typed, ZType)
 applySynth a b = do
   ctx <- use context
   traceM' ("<app " <> render a <> " =>> " <> render b)
@@ -183,7 +184,7 @@ applySynth a b = do
   traceM' ("     " <> render ctx')
   pure res
 
-subtype' :: (MonadState ZState m) => ZType -> ZType -> m ()
+subtype' :: (MonadState CheckerState m) => ZType -> ZType -> m ()
 -- <:Top
 subtype' _ ZTop = pass
 -- <:Var
@@ -218,7 +219,7 @@ subtype' (ZType m) (ZType n) | m == n = pass
 --
 subtype' a b = bug $ TypeError (render a <> " is not a subtype of " <> render b)
 
-instantiateL' :: (MonadState ZState m) => Existential -> ZType -> m ()
+instantiateL' :: (MonadState CheckerState m) => Existential -> ZType -> m ()
 instantiateL' alphaHat x = do
   d <-
     if isMonoType x
@@ -265,7 +266,7 @@ instantiateL' alphaHat x = do
     --
     go _ tau = bug $ NotMonotype tau
 
-instantiateR' :: (MonadState ZState m) => ZType -> Existential -> m ()
+instantiateR' :: (MonadState CheckerState m) => ZType -> Existential -> m ()
 instantiateR' x alphaHat = do
   d <-
     if isMonoType x
@@ -317,7 +318,7 @@ instantiateR' x alphaHat = do
     --
     go _ tau = bug $ NotMonotype tau
 
-check' :: (MonadState ZState m) => Untyped -> ZType -> m Typed
+check' :: (MonadState CheckerState m) => Untyped -> ZType -> m Typed
 -- 1|
 check' EUnit ZUnit = pure EUnit
 -- ∀|
@@ -331,6 +332,7 @@ check' (ELambda x e n ()) z@(ZFunction a b) = do
   applyCtxExpr (ELambda x e'' n z)
 check' (ENative1 _ ()) _ = bug Native
 check' (ENative2 _ ()) _ = bug Native
+check' (ESpecial ()) _ = bug Special
 -- ->Pair
 check' (EPair e1 e2 ()) (ZPair b1 b2) = do
   a1' <- e1 `check` b1
@@ -344,7 +346,7 @@ check' e b = do
   exprType a' `subtype` b'
   applyCtxExpr a
 
-synthesize' :: (MonadState ZState m) => Untyped -> m Typed
+synthesize' :: (MonadState CheckerState m) => Untyped -> m Typed
 -- Var
 synthesize' (ESymbol a ()) = do
   ctx <- use context
@@ -367,6 +369,7 @@ synthesize' (ELambda x e n ()) = do
   applyCtxExpr (ELambda x e' n (ZFunction alphaHat betaHat))
 synthesize' (ENative1 _ ()) = bug Native
 synthesize' (ENative2 _ ()) = bug Native
+synthesize' (ESpecial ()) = bug Special
 synthesize' (ELambda' xs e n ()) = do
   alphaHats <- forM xs $ \x -> (x,) . ZExistential <$> nextExtential
   betaHat <- ZExistential <$> nextExtential
@@ -419,7 +422,7 @@ synthesize' (EQuote x ()) =
        in EPair l' r' (ZPair (exprType l') (exprType r'))
     synthesizeQuoted z = bug (NotQuotable z)
 
-applySynth' :: (MonadState ZState m) => ZType -> Untyped -> m (Typed, ZType)
+applySynth' :: (MonadState CheckerState m) => ZType -> Untyped -> m (Typed, ZType)
 -- ∀App
 applySynth' (ZForall alpha a) e = do
   alphaHat <- nextExtential

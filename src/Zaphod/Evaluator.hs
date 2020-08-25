@@ -15,7 +15,6 @@ import qualified Data.Map as M
 import Lens.Micro.Mtl ((%=))
 import Relude.Extra.Map ((!?))
 import Zaphod.Checker
-import Zaphod.Context ((<:))
 import Zaphod.Types
 
 data EvaluatorError
@@ -30,12 +29,11 @@ data EvaluatorError
 
 instance Exception EvaluatorError
 
-evaluate :: (MonadState ZState m) => Typed -> m Typed
+evaluate :: (MonadReader Environment m, MonadState CheckerState m) => Typed -> m Typed
 evaluate x = do
-  env <- _environment <$> get
+  env <- ask
   runReaderT (eval x) env
   where
-    eval :: (MonadState ZState m, MonadReader Environment m) => Typed -> m Typed
     eval (ESymbol s _) = do
       m <- (!? s) <$> ask
       case m of
@@ -87,12 +85,12 @@ evaluate x = do
     --
     extend env (Variable v, z) = M.insert v z env
 
-evaluateType :: (MonadState ZState m) => Untyped -> m ZType
+evaluateType :: (MonadReader Environment m, MonadState CheckerState m) => Untyped -> m ZType
 evaluateType u = do
   t <- check u (ZType 0)
   unwrapType <$> evaluate t
 
-analyzeType :: (MonadState ZState m) => Raw -> m ZType
+analyzeType :: (MonadReader Environment m, MonadState CheckerState m) => Raw -> m ZType
 analyzeType RUnit = pure ZUnit
 analyzeType x@(RSymbol _) = ZUntyped <$> analyzeUntyped x
 analyzeType (RPair "forall" (RPair (RSymbol u) (RPair z RUnit))) =
@@ -119,7 +117,7 @@ analyzeQuoted RUnit = EUnit
 analyzeQuoted (RSymbol s) = ESymbol s ()
 analyzeQuoted (RPair l r) = EPair (analyzeQuoted l) (analyzeQuoted r) ()
 
-analyzeUntyped :: (MonadState ZState m) => Raw -> m Untyped
+analyzeUntyped :: (MonadReader Environment m, MonadState CheckerState m) => Raw -> m Untyped
 analyzeUntyped RUnit = pure EUnit
 analyzeUntyped (RSymbol s) = pure $ ESymbol s ()
 analyzeUntyped (RPair "lambda" (RPair (RSymbol x) (RPair e RUnit))) =
@@ -150,10 +148,15 @@ analyzeUntyped (RPair a b) =
     Just xs -> EApply <$> analyzeUntyped a <*> (traverse analyzeUntyped xs) <*> pure ()
     Nothing -> EPair <$> analyzeUntyped a <*> analyzeUntyped b <*> pure ()
 
-evaluateTopLevel :: (MonadState ZState m, MonadIO m) => Raw -> m Typed
+evaluateRaw :: (MonadState ZState m) => Raw -> m Typed
+evaluateRaw e = do
+  env <- _environment <$> get
+  usingReaderT env $
+    evaluatingStateT (emptyCheckerState env) (evaluate =<< synthesize =<< analyzeUntyped e)
+
+evaluateTopLevel :: (MonadState ZState m) => Raw -> m Typed
 evaluateTopLevel (RPair "def" (RPair (RSymbol s) (RPair e RUnit))) = do
-  e' <- evaluate =<< synthesize =<< analyzeUntyped e
-  context %= (CVariable (Variable s) (exprType e') <:)
+  e' <- evaluateRaw e
   environment %= M.insert s e'
   pure EUnit
-evaluateTopLevel e = evaluate =<< synthesize =<< analyzeUntyped e
+evaluateTopLevel e = evaluateRaw e

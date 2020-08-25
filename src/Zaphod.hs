@@ -31,9 +31,7 @@ instance Exception ZaphodBug
 emptyZState :: ZState
 emptyZState =
   ZState
-    { _context = baseContext,
-      _environment = baseEnvironment,
-      _existentialData = 'α'
+    { _environment = baseEnvironment
     }
 
 repl :: forall m. (MonadState ZState m, MonadException m, MonadIO m) => Maybe Text -> m ()
@@ -211,6 +209,7 @@ test = do
     parseTest t = unsafePerformIO $ case parse token "" t of
       Left e -> die (errorBundlePretty e)
       Right v -> pure v
-    analyzed a = evalState (analyzeUntyped $ parseTest a) emptyZState
-    synthesized a = evalState (synthesize <=< analyzeUntyped $ parseTest a) emptyZState
-    evaluated a = evalState (evaluate <=< synthesize <=< analyzeUntyped $ parseTest a) emptyZState
+    withZaphod = usingReader baseEnvironment . evaluatingStateT (emptyCheckerState baseEnvironment)
+    analyzed a = withZaphod (analyzeUntyped $ parseTest a)
+    synthesized a = withZaphod (synthesize <=< analyzeUntyped $ parseTest a)
+    evaluated a = withZaphod (evaluate <=< synthesize <=< analyzeUntyped $ parseTest a)
