@@ -70,11 +70,7 @@ runFile p = do
   zs <- case parse tokens p t of
     Left e -> die (errorBundlePretty e)
     Right v -> pure v
-  traverse_ go zs
-  where
-    go r = do
-      r' <- evaluateTopLevel r
-      putTextLn (render r')
+  traverse_ evaluateTopLevel zs
 
 zaphod :: IO ()
 zaphod = do
