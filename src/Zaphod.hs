@@ -47,11 +47,13 @@ repl _ = do
         Nothing -> pure z
         Just ":quit" -> pure z
         Just input -> do
-          rs <- case parse tokens "<repl>" (toText input) of
-            Left e -> die (errorBundlePretty e)
-            Right v -> pure v
-          z' <- foldlM go z rs
-          loop z'
+          case parse tokens "<repl>" (toText input) of
+            Left e -> do
+              putStrLn (errorBundlePretty e)
+              loop z
+            Right rs -> do
+              z' <- foldlM go z rs
+              loop z'
     go z r =
       handle (logBug z) $ do
         (r', z') <- runStateT (evaluateTopLevel r) z
