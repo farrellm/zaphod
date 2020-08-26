@@ -140,7 +140,10 @@ analyzeUntyped (RPair "lambda" (RPair xs (RPair e RUnit))) =
     mkParams _ = Nothing
 analyzeUntyped (RPair ":" (RPair e (RPair t RUnit))) = do
   t' <- analyzeType t
-  EAnnotation <$> analyzeUntyped e <*> evaluateType (EType t')
+  EAnnotation <$> analyzeUntyped e <*> evaluateType (stripExpr t')
+  where
+    stripExpr (ZUntyped u) = u
+    stripExpr z = EType z
 analyzeUntyped (RPair "quote" (RPair x RUnit)) = pure $ EQuote (analyzeQuoted x) ()
 analyzeUntyped (RPair "tuple" ts) = mkTuple ts
   where
