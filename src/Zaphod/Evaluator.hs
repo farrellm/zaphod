@@ -12,6 +12,7 @@ module Zaphod.Evaluator
 where
 
 import qualified Data.Map as M
+import qualified Data.Set as S
 import Lens.Micro.Mtl ((%=))
 import Relude.Extra.Map ((!?))
 import Zaphod.Checker
@@ -25,6 +26,8 @@ data EvaluatorError
   | InvalidParameters Raw
   | InvalidTuple Raw
   | UnexpectedUntyped Untyped
+  | MissingExistential Existential
+  | Impossible
   deriving (Show)
 
 instance Exception EvaluatorError
@@ -159,10 +162,49 @@ analyzeUntyped (RPair a b) =
     Nothing -> EPair <$> analyzeUntyped a <*> analyzeUntyped b <*> pure ()
 
 evaluateRaw :: (MonadState ZState m) => Raw -> m Typed
-evaluateRaw e = do
+evaluateRaw x = do
   env <- _environment <$> get
-  usingReaderT env $
-    evaluatingStateT (emptyCheckerState env) (evaluate =<< synthesize =<< analyzeUntyped e)
+  x' <-
+    usingReaderT env $
+      evaluatingStateT
+        (emptyCheckerState env)
+        (evaluate =<< synthesize =<< analyzeUntyped x)
+  pure (universalize <$> x')
+  where
+    universalize z =
+      let es = unbound z
+          us = universals z
+          eus = mkEUMap (toList es) us ['a' ..]
+       in foldl' (flip ZForall) (replaceExt eus z) eus
+
+    unbound (ZExistential e) = one e
+    unbound (ZForall _ z) = unbound z
+    unbound (ZFunction a b) = unbound a <> unbound b
+    unbound (ZPair a b) = unbound a <> unbound b
+    unbound (ZValue a) = unbound $ exprType a
+    unbound _ = mempty :: Set Existential
+
+    universals (ZForall u z) = one u <> universals z
+    universals (ZFunction a b) = universals a <> universals b
+    universals (ZPair a b) = universals a <> universals b
+    universals (ZValue a) = universals $ exprType a
+    universals _ = mempty :: Set Universal
+
+    mkEUMap [] _ _ = mempty :: Map Existential Universal
+    mkEUMap es@(e : es') us (c : cs)
+      | Universal (fromString [c]) `S.notMember` us =
+        one (e, Universal $ fromString [c]) <> mkEUMap es' us cs
+      | otherwise = mkEUMap es us cs
+    mkEUMap _ _ [] = bug Impossible
+
+    replaceExt eus (ZExistential e) = case M.lookup e eus of
+      Just u -> ZUniversal u
+      Nothing -> bug $ MissingExistential e
+    replaceExt eus (ZForall u z) = ZForall u $ replaceExt eus z
+    replaceExt eus (ZFunction a b) = ZFunction (replaceExt eus a) (replaceExt eus b)
+    replaceExt eus (ZPair a b) = ZPair (replaceExt eus a) (replaceExt eus b)
+    replaceExt eus (ZValue a) = ZValue $ const (replaceExt eus $ exprType a) <$> a
+    replaceExt _ z = z
 
 evaluateTopLevel :: (MonadState ZState m) => Raw -> m Typed
 evaluateTopLevel (RPair "def" (RPair (RSymbol s) (RPair e RUnit))) = do
