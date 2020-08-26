@@ -112,6 +112,12 @@ isMonoType (ZUniversal _) = True
 isMonoType (ZExistential _) = True
 isMonoType (ZFunction a b) = isMonoType a && isMonoType b
 isMonoType (ZPair a b) = isMonoType a && isMonoType b
+isMonoType (ZValue v) = isMonoTypeValue v
+  where
+    isMonoTypeValue (ESymbol _ ZSymbol) = True
+    isMonoTypeValue (EPair l r _) = isMonoTypeValue l && isMonoTypeValue r
+    isMonoTypeValue (EType t) = isMonoType t
+    isMonoTypeValue _ = False
 isMonoType _ = False
 
 isDeeper :: (MonadState CheckerState m) => ZType -> Existential -> m Bool
