@@ -105,6 +105,13 @@ analyzeType (RPair "tuple" ts) = unwrapType' <$> mkTuple ts
       xs' <- mkTuple xs
       pure $ EApply "zcons" [EType x', xs'] ()
     mkTuple _ = bug (InvalidTuple ts)
+analyzeType (RPair "quote" (RPair x RUnit)) =
+  pure . ZUntyped $ EQuote (EType $ quoteType x) ()
+  where
+    quoteType :: Raw -> ZType
+    quoteType RUnit = ZUnit
+    quoteType (RPair l r) = ZPair (quoteType l) (quoteType r)
+    quoteType (RSymbol s) = ZValue $ ESymbol s ZSymbol
 analyzeType (RPair a b) =
   case maybeList b of
     Just xs ->
