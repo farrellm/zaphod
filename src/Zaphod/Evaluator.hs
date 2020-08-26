@@ -48,9 +48,9 @@ evaluate x = do
             EUnit -> eval a
             _ -> eval b
         _ -> bug (ArgumentCount 3 (length xs))
-    eval (EApply f xs _) = do
+    eval (EApply f xs r) = do
       f' <- eval f
-      case f' of
+      const r <<$>> case f' of
         ELambda (Variable v) e env _ -> do
           xs' <- traverse eval xs
           local (\_ -> M.insert v (fromList' xs') env) $ eval e
