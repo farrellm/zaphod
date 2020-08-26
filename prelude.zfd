@@ -1,0 +1,2 @@
+(def id (: (lambda (x) x)
+           (forall a (-> [a] a))))
