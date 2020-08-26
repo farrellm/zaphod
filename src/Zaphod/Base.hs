@@ -45,14 +45,14 @@ baseEnvironment =
     [ ("Top", EType ZTop),
       ("cons", ENative2 (Native2 $ \l r -> EPair l r (ZPair (exprType l) (exprType r))) zCons),
       ("zcons", ENative2 (Native2 $ \l r -> EType (ZPair (getType l) (getType r))) zZCons),
-      ("unsafe-coerce", ELambda (Variable "x") (ESymbol "x" zb) mempty zUnsafeCoerce),
-      ("if-nil", ESpecial zIfNil)
+      ("if-nil", ESpecial zIfNil),
+      ("unsafe-coerce", ELambda' [Variable "x"] (ESymbol "x" zb) mempty zUnsafeCoerce)
     ]
   where
     zCons = ZForall a . ZForall b $ ZFunction (zTuple2 za zb) (ZPair za zb)
     zZCons = ZFunction (zTuple2 (ZType 0) (ZType 0)) (ZType 0)
-    zUnsafeCoerce = ZForall a . ZForall b $ ZFunction za zb
     zIfNil = ZForall a . ZForall b $ ZFunction (zTuple3 za zb zb) zb
+    zUnsafeCoerce = ZForall a . ZForall b $ ZFunction (zTuple1 za) zb
 
 getType :: Typed -> ZType
 getType (EType z) = z
