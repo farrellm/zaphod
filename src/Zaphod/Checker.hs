@@ -20,12 +20,12 @@ data ZaphodBug
   | MissingExistentialInContext Existential Context
   | CannotApply ZType Untyped
   | NotMonotype ZType
-  | InvalidApply Untyped
   | NotQuotable Untyped
   | UnexpectedUntyped Untyped
   | UnexpectedTyped Typed
   | Native
   | Special
+  | NotList Typed
   deriving (Show)
 
 instance Exception ZaphodBug
@@ -391,8 +391,11 @@ synthesize' (EApply e1 e2 ()) = do
   (e2', c) <- exprType e1' `applySynth` fromList' e2
   case maybeList e2' of
     Just e2'' -> applyCtxExpr $ EApply e1' e2'' c
-    Nothing -> applyCtxExpr $ EPair e1' e2' c
-synthesize' p@(EPair _ _ ()) = bug (InvalidApply p)
+    Nothing -> bug (NotList e2')
+synthesize' (EPair l r ()) = do
+  l' <- synthesize l
+  r' <- synthesize r
+  pure . EPair l' r' $ ZPair (exprType l') (exprType r')
 -- Type
 synthesize' (EType m) = EType <$> synthesizeType m
   where
