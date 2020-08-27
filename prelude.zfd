@@ -32,3 +32,19 @@
      (unsafe-coerce 'Nil))
 (def Cons (forall a (-> [a (List a)] (List a)))
      (lambda (x xs) (unsafe-coerce ['Cons x xs])))
+
+(def append
+     (forall a (forall b (-> [a b] Top)))
+     (lambda (xs ys)
+       (if-nil xs (: ys Top)
+         (cons (car xs) (append (cdr xs) ys)))))
+
+(def reverse'
+     (forall a (forall b (-> [a b] Top)))
+     (lambda (xs ys)
+       (if-nil xs ys
+         (reverse' (cdr xs) (cons (car xs) ys)))))
+
+(def reverse
+     (forall a (-> [a] Top))
+     (lambda (xs) (reverse' xs ())))
