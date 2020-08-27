@@ -100,4 +100,4 @@ token =
     <|> try quote
 
 tokens :: Parser [Raw]
-tokens = many token <* eof
+tokens = (spaceConsumer <|> mempty) *> many token <* eof
