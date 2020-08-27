@@ -19,3 +19,9 @@
 (def Bool (: 'Bool Type))
 (def True (: (unsafe-coerce 'True) Bool))
 (def False (: (unsafe-coerce 'False) Bool))
+
+(def List (lambda (a) (: ['List a] Type)))
+(def Nil (: (unsafe-coerce 'Nil)
+            (forall a (List a))))
+(def Cons (: (lambda (x xs) (unsafe-coerce ['Cons x xs]))
+             (forall a (-> [a (List a)] (List a)))))

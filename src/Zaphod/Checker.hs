@@ -223,6 +223,8 @@ subtype' a (ZExistential alphaHat) | alphaHat `notInFV` a = a `instantiateR` alp
 subtype' ZSymbol ZSymbol = pass
 -- <:Type
 subtype' (ZType m) (ZType n) | m == n = pass
+-- <:Value
+subtype' (ZValue (ESymbol a ZSymbol)) (ZValue (ESymbol b ZSymbol)) | a == b = pass
 --
 subtype' a b = bug $ TypeError (render a <> " is not a subtype of " <> render b)
 
