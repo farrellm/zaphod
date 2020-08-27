@@ -33,6 +33,20 @@ data EvaluatorError
 
 instance Exception EvaluatorError
 
+setType :: ZType -> Typed -> Typed
+setType _ EUnit = EUnit
+setType _ z@(EType _) = z
+setType z (ESymbol s _) = ESymbol s z
+setType z (ELambda x e env _) = ELambda x e env z
+setType z (ELambda' xs e env _) = ELambda' xs e env z
+setType z (EApply f xs _) = EApply f xs z
+setType z (EPair l r _) = EPair l r z
+setType z (EAnnotation e _) = EAnnotation e z
+setType z (EQuote q _) = EQuote q z
+setType z (ENative1 n _) = ENative1 n z
+setType z (ENative2 n _) = ENative2 n z
+setType z (ESpecial _) = ESpecial z
+
 evaluate :: (MonadReader Environment m, MonadState CheckerState m) => Typed -> m Typed
 evaluate x = do
   env <- ask
@@ -44,7 +58,7 @@ evaluate x = do
         (Just v, _) -> pure v
         (_, Just v) -> pure v
         (_, _) -> bug (UndefinedVariable s)
-    eval (EAnnotation v z) = const z <<$>> eval v
+    eval (EAnnotation v z) = setType z <$> eval v
     eval (EApply (ESymbol "if-nil" _) xs _) =
       case xs of
         [p, a, b] -> do
@@ -55,7 +69,7 @@ evaluate x = do
         _ -> bug (ArgumentCount 3 (length xs))
     eval (EApply f xs r) = do
       f' <- eval f
-      const r <<$>> case f' of
+      setType r <$> case f' of
         ELambda (Variable v) e env _ -> do
           xs' <- traverse eval xs
           local (\(_, n) -> (M.insert v (fromList' xs') env, n)) $ eval e
@@ -212,7 +226,7 @@ evaluateRaw m x = do
     replaceExt eus (ZForall u z) = ZForall u $ replaceExt eus z
     replaceExt eus (ZFunction a b) = ZFunction (replaceExt eus a) (replaceExt eus b)
     replaceExt eus (ZPair a b) = ZPair (replaceExt eus a) (replaceExt eus b)
-    replaceExt eus (ZValue a) = ZValue $ const (replaceExt eus $ exprType a) <$> a
+    replaceExt eus (ZValue a) = ZValue $ setType (replaceExt eus $ exprType a) a
     replaceExt _ z = z
 
 evaluateRawType :: (MonadReader Environment m, MonadState CheckerState m) => Raw -> m ZType
