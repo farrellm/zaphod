@@ -201,8 +201,8 @@ test = do
     qNested = "(quote (x (a b) y z))"
     qNested' = "'(x (a b) y z)"
     top = "(: [() ()] Top)"
-    ifNil = "(if-nil '() (: '() Top) (: [()] Top))"
-    ifNil' = "(if-nil [()] (: '() Top) (: [()] Top))"
+    ifNil = "(if (is-nil ()) (: '() Top) (: [()] Top))"
+    ifNil' = "(if (is-nil [()]) (: '() Top) (: [()] Top))"
     -- lambda2p = "(\\x.(\\y.(x.y)))"
     parseTest t = unsafePerformIO $ case parse token "" t of
       Left e -> die (errorBundlePretty e)

@@ -36,13 +36,13 @@
 (def append
      (forall a (forall b (-> [a b] Top)))
      (lambda (xs ys)
-       (if-nil xs (: ys Top)
+       (if (is-nil xs) (: ys Top)
          (cons (car xs) (append (cdr xs) ys)))))
 
 (def reverse'
      (forall a (forall b (-> [a b] Top)))
      (lambda (xs ys)
-       (if-nil xs ys
+       (if (is-nil xs) (: ys Top)
          (reverse' (cdr xs) (cons (car xs) ys)))))
 
 (def reverse

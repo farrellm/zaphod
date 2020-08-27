@@ -15,6 +15,7 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import Lens.Micro.Mtl ((%=))
 import Relude.Extra.Map ((!?))
+import Zaphod.Base
 import Zaphod.Checker
 import Zaphod.Context
 import Zaphod.Types
@@ -59,13 +60,13 @@ evaluate x = do
         (_, Just v) -> pure v
         (_, _) -> bug (UndefinedVariable s)
     eval (EAnnotation v z) = setType z <$> eval v
-    eval (EApply (ESymbol "if-nil" _) xs _) =
+    eval (EApply (ESymbol "if" _) xs _) =
       case xs of
         [p, a, b] -> do
           p' <- eval p
-          case p' of
-            EUnit -> eval a
-            _ -> eval b
+          if p' == zTrue
+            then eval a
+            else eval b
         _ -> bug (ArgumentCount 3 (length xs))
     eval (EApply f xs r) = do
       f' <- eval f
