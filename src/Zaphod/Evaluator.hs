@@ -141,6 +141,8 @@ analyzeUntyped (RPair "lambda" (RPair xs (RPair e RUnit))) =
     mkParams RUnit = Just []
     mkParams (RPair (RSymbol z) zs) = (Variable z :) <$> mkParams zs
     mkParams _ = Nothing
+analyzeUntyped (RPair ":" (RPair t (RPair "Type" RUnit))) = do
+  EType <$> analyzeType t
 analyzeUntyped (RPair ":" (RPair e (RPair t RUnit))) = do
   t' <- analyzeType t
   EAnnotation <$> analyzeUntyped e <*> evaluateType (stripExpr t')

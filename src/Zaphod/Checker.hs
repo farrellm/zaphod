@@ -110,6 +110,7 @@ isMonoType ZUnit = True
 isMonoType ZSymbol = True
 isMonoType (ZUniversal _) = True
 isMonoType (ZExistential _) = True
+isMonoType (ZType _) = True
 isMonoType (ZFunction a b) = isMonoType a && isMonoType b
 isMonoType (ZPair a b) = isMonoType a && isMonoType b
 isMonoType (ZValue v) = isMonoTypeValue v

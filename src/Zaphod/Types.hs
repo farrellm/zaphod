@@ -143,7 +143,7 @@ instance Render ZType where
     case maybeList p of
       Just xs -> render xs
       Nothing -> render (l, r)
-  render (ZValue x) = "{" <> render x <> "}"
+  render (ZValue x) = "{" <> render' x <> "}"
   render (ZUntyped x) = "{" <> render x <> "}"
   render ZTop = "Top"
 
@@ -264,7 +264,8 @@ render' :: Typed -> Text
 render' = render . stripType
 
 instance Render Typed where
-  render (EType z) = "[" <> render z <> "]"
+  render (EType (ZValue e)) = "[{" <> render' e <> "}] : Type"
+  render (EType z) = "[" <> render z <> "] : Type"
   render EUnit = "() : ()"
   render (ESymbol t z) = render t <> " : " <> render z
   render (ELambda x e _ z) = "(\\" <> render x <> " " <> render' e <> ") : " <> render z

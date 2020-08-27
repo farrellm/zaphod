@@ -36,6 +36,7 @@ baseEnvironment =
   M.fromList
     [ -- Native values
       ("Top", EType ZTop),
+      ("Type", EType (ZType 0)),
       -- Native functions
       ("cons", ENative2 (Native2 $ \l r -> EPair l r (ZPair (exprType l) (exprType r))) zCons),
       ("fst", ENative1 (Native1 $ fst . getPair) zFst),
