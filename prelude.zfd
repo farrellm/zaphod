@@ -15,3 +15,7 @@
 (def cadr (compose car cdr))
 (def cddr (compose cdr cdr))
 (def caddr (compose car cddr))
+
+(def Bool (: 'Bool Type))
+(def True (: (unsafe-coerce 'True) Bool))
+(def False (: (unsafe-coerce 'False) Bool))
