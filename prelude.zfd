@@ -5,3 +5,13 @@
                 (forall a (forall b (forall c
                   (-> [(-> [b] c) (-> [a] b)]
                       (-> [a] c)))))))
+
+(def car (: (unsafe-coerce fst)
+            (forall a (-> [a] Top))))
+
+(def cdr (: (unsafe-coerce snd)
+            (forall a (-> [a] Top))))
+
+(def cadr (compose car cdr))
+(def cddr (compose cdr cdr))
+(def caddr (compose car cddr))
