@@ -1,27 +1,34 @@
-(def id (: (lambda (x) x)
-           (forall a (-> [a] a))))
+(def id
+     (forall a (-> [a] a))
+     (lambda (x) x))
 
-(def compose (: (lambda (f g) (lambda (x) (f (g x))))
-                (forall a (forall b (forall c
-                  (-> [(-> [b] c) (-> [a] b)]
-                      (-> [a] c)))))))
+(def compose
+     (forall a (forall b (forall c
+         (-> [(-> [b] c) (-> [a] b)]
+             (-> [a] c)))))
+     (lambda (f g) (lambda (x) (f (g x)))))
 
-(def car (: (unsafe-coerce fst)
-            (forall a (-> [a] Top))))
+(def car
+     (forall a (-> [a] Top))
+     (unsafe-coerce fst))
 
-(def cdr (: (unsafe-coerce snd)
-            (forall a (-> [a] Top))))
+(def cdr (forall a (-> [a] Top))
+     (unsafe-coerce snd))
 
 (def cadr (compose car cdr))
 (def cddr (compose cdr cdr))
 (def caddr (compose car cddr))
 
+(def Bool Type
+     'Bool)
 (def Bool (: 'Bool Type))
-(def True (: (unsafe-coerce 'True) Bool))
-(def False (: (unsafe-coerce 'False) Bool))
+(def True Bool
+     (unsafe-coerce 'True))
+(def False Bool
+     (unsafe-coerce 'False))
 
 (def List (lambda (a) (: ['List a] Type)))
-(def Nil (: (unsafe-coerce 'Nil)
-            (forall a (List a))))
-(def Cons (: (lambda (x xs) (unsafe-coerce ['Cons x xs]))
-             (forall a (-> [a (List a)] (List a)))))
+(def Nil (forall a (List a))
+     (unsafe-coerce 'Nil))
+(def Cons (forall a (-> [a (List a)] (List a)))
+     (lambda (x xs) (unsafe-coerce ['Cons x xs])))
