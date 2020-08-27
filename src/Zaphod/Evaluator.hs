@@ -16,6 +16,7 @@ import qualified Data.Set as S
 import Lens.Micro.Mtl ((%=))
 import Relude.Extra.Map ((!?))
 import Zaphod.Checker
+import Zaphod.Context
 import Zaphod.Types
 
 data EvaluatorError
@@ -35,13 +36,14 @@ instance Exception EvaluatorError
 evaluate :: (MonadReader Environment m, MonadState CheckerState m) => Typed -> m Typed
 evaluate x = do
   env <- ask
-  runReaderT (eval x) env
+  runReaderT (eval x) (mempty, env)
   where
     eval (ESymbol s _) = do
-      m <- (!? s) <$> ask
-      case m of
-        Just v -> pure v
-        Nothing -> bug (UndefinedVariable s)
+      (m, n) <- bimap (!? s) (!? s) <$> ask
+      case (m, n) of
+        (Just v, _) -> pure v
+        (_, Just v) -> pure v
+        (_, _) -> bug (UndefinedVariable s)
     eval (EAnnotation v z) = const z <<$>> eval v
     eval (EApply (ESymbol "if-nil" _) xs _) =
       case xs of
@@ -56,11 +58,11 @@ evaluate x = do
       const r <<$>> case f' of
         ELambda (Variable v) e env _ -> do
           xs' <- traverse eval xs
-          local (\_ -> M.insert v (fromList' xs') env) $ eval e
+          local (\(_, n) -> (M.insert v (fromList' xs') env, n)) $ eval e
         ELambda' vs e env _
           | length vs == length xs -> do
             vxs <- traverse (\(v, z) -> (v,) <$> eval z) $ zip vs xs
-            local (\_ -> foldl' extend env vxs) $ eval e
+            local (\(_, n) -> (foldl' extend env vxs, n)) $ eval e
           | otherwise -> bug (ArgumentCount (length vs) (length xs))
         ENative1 (Native1 g) _ ->
           case xs of
@@ -72,14 +74,14 @@ evaluate x = do
             _ -> bug (ArgumentCount 2 (length xs))
         _ -> bug (NotLambda f)
     eval p@(EPair _ _ _) = bug (UnanalyzedApply p)
-    eval (ELambda v e _ t) = ELambda v e <$> ask <*> pure t
-    eval (ELambda' vs e _ t) = ELambda' vs e <$> ask <*> pure t
+    eval (ELambda v e _ t) = ELambda v e <$> (fst <$> ask) <*> pure t
+    eval (ELambda' vs e _ t) = ELambda' vs e <$> (fst <$> ask) <*> pure t
     eval (EQuote z _) = pure z
     eval (EType t) = EType <$> evalType t
     eval e = pure e
     --
     evalType (ZForall u@(Universal s) z) =
-      ZForall u <$> local (M.insert s (EType $ ZUniversal u)) (evalType z)
+      ZForall u <$> local (first (M.insert s (EType $ ZUniversal u))) (evalType z)
     evalType (ZFunction a b) = ZFunction <$> evalType a <*> evalType b
     evalType (ZPair a b) = ZPair <$> evalType a <*> evalType b
     evalType (ZValue a) = unwrapType <$> eval a
@@ -144,11 +146,7 @@ analyzeUntyped (RPair "lambda" (RPair xs (RPair e RUnit))) =
 analyzeUntyped (RPair ":" (RPair t (RPair "Type" RUnit))) = do
   EType <$> analyzeType t
 analyzeUntyped (RPair ":" (RPair e (RPair t RUnit))) = do
-  t' <- analyzeType t
-  EAnnotation <$> analyzeUntyped e <*> evaluateType (stripExpr t')
-  where
-    stripExpr (ZUntyped u) = u
-    stripExpr z = EType z
+  EAnnotation <$> analyzeUntyped e <*> evaluateRawType t
 analyzeUntyped (RPair "quote" (RPair x RUnit)) = pure $ EQuote (analyzeQuoted x) ()
 analyzeUntyped (RPair "tuple" ts) = mkTuple ts
   where
@@ -163,14 +161,23 @@ analyzeUntyped (RPair a b) =
     Just xs -> EApply <$> analyzeUntyped a <*> (traverse analyzeUntyped xs) <*> pure ()
     Nothing -> EPair <$> analyzeUntyped a <*> analyzeUntyped b <*> pure ()
 
-evaluateRaw :: (MonadState ZState m) => Raw -> m Typed
-evaluateRaw x = do
+evaluateRaw :: (MonadState ZState m) => Maybe (Symbol, Raw) -> Raw -> m Typed
+evaluateRaw m x = do
   env <- _environment <$> get
   x' <-
-    usingReaderT env $
-      evaluatingStateT
-        (emptyCheckerState env)
-        (evaluate =<< synthesize =<< analyzeUntyped x)
+    usingReaderT env
+      . evaluatingStateT (emptyCheckerState env)
+      $ do
+        case m of
+          Just (n, "Type") -> do
+            context %= (CVariable (Variable n) (ZType 0) <:)
+            EType <$> evaluateRawType x
+          Just (n, t) -> do
+            t' <- evaluateRawType t
+            context %= (CVariable (Variable n) t' <:)
+            let x' = (RPair ":" (RPair x (RPair t RUnit)))
+            evaluate =<< synthesize =<< analyzeUntyped x'
+          Nothing -> evaluate =<< synthesize =<< analyzeUntyped x
   pure (universalize <$> x')
   where
     universalize z =
@@ -208,9 +215,21 @@ evaluateRaw x = do
     replaceExt eus (ZValue a) = ZValue $ const (replaceExt eus $ exprType a) <$> a
     replaceExt _ z = z
 
+evaluateRawType :: (MonadReader Environment m, MonadState CheckerState m) => Raw -> m ZType
+evaluateRawType t = do
+  t' <- analyzeType t
+  evaluateType (stripExpr t')
+  where
+    stripExpr (ZUntyped u) = u
+    stripExpr z = EType z
+
 evaluateTopLevel :: (MonadState ZState m) => Raw -> m Typed
 evaluateTopLevel (RPair "def" (RPair (RSymbol s) (RPair e RUnit))) = do
-  e' <- evaluateRaw e
+  e' <- evaluateRaw Nothing e
   environment %= M.insert s e'
   pure EUnit
-evaluateTopLevel e = evaluateRaw e
+evaluateTopLevel (RPair "def" (RPair (RSymbol s) (RPair t (RPair e RUnit)))) = do
+  e' <- evaluateRaw (Just (s, t)) e
+  environment %= M.insert s e'
+  pure EUnit
+evaluateTopLevel e = evaluateRaw Nothing e
