@@ -1,2 +1,7 @@
 (def id (: (lambda (x) x)
            (forall a (-> [a] a))))
+
+(def compose (: (lambda (f g) (lambda (x) (f (g x))))
+                (forall a (forall b (forall c
+                  (-> [(-> [b] c) (-> [a] b)]
+                      (-> [a] c)))))))
