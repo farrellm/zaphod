@@ -22,7 +22,8 @@ data ZaphodBug
 
 data ZaphodOptions = ZaphodOptions
   { _path :: Maybe FilePath,
-    _repl :: Bool
+    _repl :: Bool,
+    _cmd :: Maybe Text
   }
   deriving (Show)
 
@@ -33,6 +34,15 @@ emptyZState =
   ZState
     { _environment = baseEnvironment
     }
+
+evalText :: forall m. (MonadState ZState m, MonadException m, MonadIO m) => Text -> m ()
+evalText t =
+  case parse token "<cmd>" t of
+    Left e -> do
+      putStrLn (errorBundlePretty e)
+    Right r -> do
+      r' <- evaluateTopLevel r
+      putTextLn (render r')
 
 repl :: forall m. (MonadState ZState m, MonadException m, MonadIO m) => Maybe Text -> m ()
 repl _ = do
@@ -79,10 +89,15 @@ zaphod = do
     Just p -> evaluatingStateT emptyZState $ do
       runFile "prelude.zfd"
       runFile p
+      traverse_ evalText $ _cmd args
       when (_repl args) $ repl Nothing
     Nothing -> evaluatingStateT emptyZState $ do
       runFile "prelude.zfd"
-      repl Nothing
+      case _cmd args of
+        Just c -> do
+          evalText c
+          when (_repl args) $ repl Nothing
+        Nothing -> repl Nothing
   where
     opts =
       info
@@ -95,6 +110,7 @@ zaphodOptions :: Parser ZaphodOptions
 zaphodOptions = do
   _repl <- switch (long "repl" <> help "drop into a REPL after running file")
   _path <- optional (strArgument (metavar "PATH" <> help "file to interpret"))
+  _cmd <- optional $ strOption (short 'c' <> metavar "CMD" <> help "command to execute")
   pure ZaphodOptions {..}
 
 test :: IO ()
