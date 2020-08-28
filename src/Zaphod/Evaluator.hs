@@ -11,6 +11,7 @@ module Zaphod.Evaluator
   )
 where
 
+import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as M
 import qualified Data.Set as S
 import Lens.Micro.Mtl ((%=))
@@ -30,6 +31,7 @@ data EvaluatorError
   | UnexpectedUntyped Untyped
   | MissingExistential Existential
   | BadRaw Typed
+  | BadBegin Raw
   | Impossible
   deriving (Show)
 
@@ -182,28 +184,8 @@ analyzeUntyped (RPair "tuple" ts) = mkTuple ts
     mkTuple _ = bug (InvalidTuple ts)
 analyzeUntyped (RPair a b) =
   case maybeList b of
-    Just xs -> do
-      case a of
-        RSymbol s -> do
-          f <- (M.lookup s) <$> ask
-          case (f :: Maybe Typed) of
-            Just (EMacro v e _) -> do
-              xs' <- traverse (analyzeUntyped . quote) xs
-              r <- evaluate =<< synthesize (EApply (ELambda v (stripType e) mempty ()) xs' ())
-              analyzeUntyped $ toRaw r
-            Just (EMacro' vs e _) -> do
-              xs' <- traverse (analyzeUntyped . quote) xs
-              r <- evaluate =<< synthesize (EApply (ELambda' vs (stripType e) mempty ()) xs' ())
-              analyzeUntyped $ toRaw r
-            _ -> EApply <$> analyzeUntyped a <*> traverse analyzeUntyped xs <*> pure ()
-        _ -> EApply <$> analyzeUntyped a <*> traverse analyzeUntyped xs <*> pure ()
+    Just xs -> EApply <$> analyzeUntyped a <*> traverse analyzeUntyped xs <*> pure ()
     Nothing -> EPair <$> analyzeUntyped a <*> analyzeUntyped b <*> pure ()
-  where
-    quote e = RPair "quote" (RPair e RUnit)
-    toRaw EUnit = RUnit
-    toRaw (ESymbol s _) = RSymbol s
-    toRaw (EPair l r _) = RPair (toRaw l) (toRaw r)
-    toRaw e = bug $ BadRaw e
 
 evaluateRaw :: (MonadState ZState m) => Maybe (Symbol, Raw) -> Raw -> m Typed
 evaluateRaw m x = do
@@ -267,13 +249,68 @@ evaluateRawType t = do
     stripExpr (ZUntyped u) = u
     stripExpr z = EType z
 
-evaluateTopLevel :: (MonadState ZState m) => Raw -> m Typed
-evaluateTopLevel (RPair "def" (RPair (RSymbol s) (RPair e RUnit))) = do
+macroExpand1 :: (MonadState ZState m) => Raw -> m Raw
+macroExpand1 w = do
+  env <- _environment <$> get
+  usingReaderT env
+    . evaluatingStateT (emptyCheckerState env)
+    $ do
+      -- traceShowM (toString (render w))
+      w' <- go w
+      -- traceShowM (toString (render w'))
+      pure w'
+  where
+    go :: (MonadReader Environment m, MonadState CheckerState m) => Raw -> m Raw
+    go a@(RPair (RSymbol s) b) =
+      case maybeList b of
+        Just xs -> do
+          f <- M.lookup s <$> ask
+          case f of
+            Just (EMacro v e _) -> do
+              xs' <- traverse (analyzeUntyped . quote) xs
+              x' <- evaluate =<< synthesize (EApply (ELambda v (stripType e) mempty ()) xs' ())
+              pure $ toRaw x'
+            Just (EMacro' vs e _) -> do
+              xs' <- traverse (analyzeUntyped . quote) xs
+              x' <- evaluate =<< synthesize (EApply (ELambda' vs (stripType e) mempty ()) xs' ())
+              pure $ toRaw x'
+            _ -> pure a
+        Nothing -> pure a
+    go z = pure z
+
+    quote e = RPair "quote" (RPair e RUnit)
+
+    toRaw EUnit = RUnit
+    toRaw (ESymbol s _) = RSymbol s
+    toRaw (EPair l r _) = RPair (toRaw l) (toRaw r)
+    toRaw e = bug $ BadRaw e
+
+macroExpand :: (MonadState ZState m) => Raw -> m Raw
+macroExpand w = do
+  w' <- macroExpand1 w
+  if w == w'
+    then pure w
+    else macroExpand1 w'
+
+evaluateTopLevel' :: (MonadState ZState m) => Raw -> m Typed
+evaluateTopLevel' (RPair "def" (RPair (RSymbol s) (RPair e RUnit))) = do
   e' <- evaluateRaw Nothing e
   environment %= M.insert s e'
   pure EUnit
-evaluateTopLevel (RPair "def" (RPair (RSymbol s) (RPair t (RPair e RUnit)))) = do
+evaluateTopLevel' (RPair "def" (RPair (RSymbol s) (RPair t (RPair e RUnit)))) = do
   e' <- evaluateRaw (Just (s, t)) e
   environment %= M.insert s e'
   pure EUnit
-evaluateTopLevel e = evaluateRaw Nothing e
+evaluateTopLevel' (RPair "begin" r) =
+  case maybeList r of
+    Just rs -> case NE.nonEmpty rs of
+      Just rs' -> do
+        xs <- traverse evaluateTopLevel rs'
+        pure $ NE.last xs
+      Nothing -> bug $ BadBegin r
+    Nothing -> bug $ BadBegin r
+evaluateTopLevel' e = do
+  evaluateRaw Nothing e
+
+evaluateTopLevel :: (MonadState ZState m) => Raw -> m Typed
+evaluateTopLevel = evaluateTopLevel' <=< macroExpand
