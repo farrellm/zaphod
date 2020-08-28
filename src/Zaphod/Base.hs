@@ -60,7 +60,8 @@ baseEnvironment =
       ("fst", ENative1 (Native1 $ fst . getPair) zFst),
       ("snd", ENative1 (Native1 $ snd . getPair) zSnd),
       --
-      ("is-nil", ENative1 (Native1 isNil) zIsNil),
+      ("is-nil", ENative1 (Native1 isNil) zPred),
+      ("is-symbol", ENative1 (Native1 isSymbol) zPred),
       -- Special forms
       ("if", ESpecial zIf),
       -- bypass type checker
@@ -74,9 +75,11 @@ baseEnvironment =
     zIf = ZForall a $ ZFunction (zTuple3 zBool za za) za
     zUnsafeCoerce = ZForall a . ZForall b $ ZFunction (zTuple1 za) zb
     --
-    zIsNil = ZForall a (ZFunction (zTuple1 za) zBool)
+    zPred = ZForall a (ZFunction (zTuple1 za) zBool)
     isNil EUnit = zTrue
     isNil _ = zFalse
+    isSymbol (ESymbol _ _) = zTrue
+    isSymbol _ = zFalse
 
 getType :: Typed -> ZType
 getType (EType z) = z
