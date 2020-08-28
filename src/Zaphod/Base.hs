@@ -51,6 +51,7 @@ baseEnvironment =
   M.fromList
     [ -- Native values
       ("Top", EType ZTop),
+      ("Symbol", EType ZSymbol),
       ("Type", EType (ZType 0)),
       -- Native functions
       ("zcons", ENative2 (Native2 $ \l r -> EType (ZPair (getType l) (getType r))) zZCons),

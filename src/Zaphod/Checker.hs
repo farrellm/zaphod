@@ -376,9 +376,6 @@ synthesize' (ELambda x e n ()) = do
   e' <- e `check` betaHat
   context %= dropVar x
   applyCtxExpr (ELambda x e' n (ZFunction alphaHat betaHat))
-synthesize' (ENative1 _ ()) = bug Native
-synthesize' (ENative2 _ ()) = bug Native
-synthesize' (ESpecial ()) = bug Special
 synthesize' (ELambda' xs e n ()) = do
   alphaHats <- forM xs $ \x -> (x,) . ZExistential <$> nextExtential
   betaHat <- ZExistential <$> nextExtential
@@ -388,6 +385,25 @@ synthesize' (ELambda' xs e n ()) = do
   for_ (reverse alphaHats) $ \(x, _) ->
     context %= dropVar x
   applyCtxExpr (ELambda' xs e' n (ZFunction (fromList' $ snd <$> alphaHats) betaHat))
+synthesize' (EMacro x e ()) = do
+  alphaHat <- ZExistential <$> nextExtential
+  betaHat <- ZExistential <$> nextExtential
+  context %= (CVariable x alphaHat <:)
+  e' <- e `check` betaHat
+  context %= dropVar x
+  applyCtxExpr (EMacro x e' (ZFunction alphaHat betaHat))
+synthesize' (EMacro' xs e ()) = do
+  alphaHats <- forM xs $ \x -> (x,) . ZExistential <$> nextExtential
+  betaHat <- ZExistential <$> nextExtential
+  for_ alphaHats $ \(x, alphaHat) ->
+    context %= (CVariable x alphaHat <:)
+  e' <- e `check` betaHat
+  for_ (reverse alphaHats) $ \(x, _) ->
+    context %= dropVar x
+  applyCtxExpr (EMacro' xs e' (ZFunction (fromList' $ snd <$> alphaHats) betaHat))
+synthesize' (ENative1 _ ()) = bug Native
+synthesize' (ENative2 _ ()) = bug Native
+synthesize' (ESpecial ()) = bug Special
 -- ->E
 synthesize' (EApply e1 e2 ()) = do
   e1' <- synthesize e1

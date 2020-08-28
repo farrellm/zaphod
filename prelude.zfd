@@ -48,3 +48,20 @@
 (def reverse
      (forall a (-> [a] Top))
      (lambda (xs) (reverse' xs ())))
+
+(def let1
+     (-> [Top Top Top] Top)
+     (lambda (x v e)
+       [['lambda [x] e] v]))
+
+(def let'
+     (-> [Top Top] Top)
+     (lambda (ps e)
+       (if (is-nil ps) e
+           (let1 (car (car ps))
+                 (cadr (car ps))
+                 (let' (cdr ps) e)))))
+
+(def let
+     (-> [Top Top] Top)
+     (macro (ps e) (let' ps e)))

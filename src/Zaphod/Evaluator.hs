@@ -29,6 +29,7 @@ data EvaluatorError
   | InvalidTuple Raw
   | UnexpectedUntyped Untyped
   | MissingExistential Existential
+  | BadRaw Typed
   | Impossible
   deriving (Show)
 
@@ -40,6 +41,8 @@ setType _ z@(EType _) = z
 setType z (ESymbol s _) = ESymbol s z
 setType z (ELambda x e env _) = ELambda x e env z
 setType z (ELambda' xs e env _) = ELambda' xs e env z
+setType z (EMacro x e _) = EMacro x e z
+setType z (EMacro' x e _) = EMacro' x e z
 setType z (EApply f xs _) = EApply f xs z
 setType z (EPair l r _) = EPair l r z
 setType z (EAnnotation e _) = EAnnotation e z
@@ -144,6 +147,11 @@ analyzeQuoted RUnit = EUnit
 analyzeQuoted (RSymbol s) = ESymbol s ()
 analyzeQuoted (RPair l r) = EPair (analyzeQuoted l) (analyzeQuoted r) ()
 
+mkParams :: Raw -> Maybe [Variable]
+mkParams RUnit = Just []
+mkParams (RPair (RSymbol z) zs) = (Variable z :) <$> mkParams zs
+mkParams _ = Nothing
+
 analyzeUntyped :: (MonadReader Environment m, MonadState CheckerState m) => Raw -> m Untyped
 analyzeUntyped RUnit = pure EUnit
 analyzeUntyped (RSymbol s) = pure $ ESymbol s ()
@@ -153,11 +161,12 @@ analyzeUntyped (RPair "lambda" (RPair xs (RPair e RUnit))) =
   case mkParams xs of
     Just ps -> ELambda' ps <$> analyzeUntyped e <*> pure mempty <*> pure ()
     Nothing -> bug (InvalidParameters xs)
-  where
-    mkParams :: Raw -> Maybe [Variable]
-    mkParams RUnit = Just []
-    mkParams (RPair (RSymbol z) zs) = (Variable z :) <$> mkParams zs
-    mkParams _ = Nothing
+analyzeUntyped (RPair "macro" (RPair (RSymbol x) (RPair e RUnit))) =
+  EMacro (Variable x) <$> analyzeUntyped e <*> pure ()
+analyzeUntyped (RPair "macro" (RPair xs (RPair e RUnit))) =
+  case mkParams xs of
+    Just ps -> EMacro' ps <$> analyzeUntyped e <*> pure ()
+    Nothing -> bug (InvalidParameters xs)
 analyzeUntyped (RPair ":" (RPair t (RPair "Type" RUnit))) = do
   EType <$> analyzeType t
 analyzeUntyped (RPair ":" (RPair e (RPair t RUnit))) = do
@@ -173,8 +182,28 @@ analyzeUntyped (RPair "tuple" ts) = mkTuple ts
     mkTuple _ = bug (InvalidTuple ts)
 analyzeUntyped (RPair a b) =
   case maybeList b of
-    Just xs -> EApply <$> analyzeUntyped a <*> (traverse analyzeUntyped xs) <*> pure ()
+    Just xs -> do
+      case a of
+        RSymbol s -> do
+          f <- (M.lookup s) <$> ask
+          case (f :: Maybe Typed) of
+            Just (EMacro v e _) -> do
+              xs' <- traverse (analyzeUntyped . quote) xs
+              r <- evaluate =<< synthesize (EApply (ELambda v (stripType e) mempty ()) xs' ())
+              analyzeUntyped $ toRaw r
+            Just (EMacro' vs e _) -> do
+              xs' <- traverse (analyzeUntyped . quote) xs
+              r <- evaluate =<< synthesize (EApply (ELambda' vs (stripType e) mempty ()) xs' ())
+              analyzeUntyped $ toRaw r
+            _ -> EApply <$> analyzeUntyped a <*> traverse analyzeUntyped xs <*> pure ()
+        _ -> EApply <$> analyzeUntyped a <*> traverse analyzeUntyped xs <*> pure ()
     Nothing -> EPair <$> analyzeUntyped a <*> analyzeUntyped b <*> pure ()
+  where
+    quote e = RPair "quote" (RPair e RUnit)
+    toRaw EUnit = RUnit
+    toRaw (ESymbol s _) = RSymbol s
+    toRaw (EPair l r _) = RPair (toRaw l) (toRaw r)
+    toRaw e = bug $ BadRaw e
 
 evaluateRaw :: (MonadState ZState m) => Maybe (Symbol, Raw) -> Raw -> m Typed
 evaluateRaw m x = do

@@ -153,6 +153,8 @@ data Expr t
   | ESymbol Symbol t
   | ELambda Variable (Expr t) Environment t
   | ELambda' [Variable] (Expr t) Environment t
+  | EMacro Variable (Expr t) t
+  | EMacro' [Variable] (Expr t) t
   | EApply (Expr t) [Expr t] t
   | EPair (Expr t) (Expr t) t
   | EAnnotation (Expr t) ZType
@@ -220,6 +222,8 @@ exprType (EType _) = ZType 0
 exprType EUnit = ZUnit
 exprType (ELambda _ _ _ t) = t
 exprType (ELambda' _ _ _ t) = t
+exprType (EMacro _ _ t) = t
+exprType (EMacro' _ _ t) = t
 exprType (EAnnotation _ t) = t
 exprType (ESymbol _ t) = t
 exprType (EPair _ _ t) = t
@@ -235,6 +239,8 @@ stripType EUnit = EUnit
 stripType (ESymbol s _) = ESymbol s ()
 stripType (ELambda x e n _) = ELambda x (stripType e) n ()
 stripType (ELambda' xs e n _) = ELambda' xs (stripType e) n ()
+stripType (EMacro x e _) = EMacro x (stripType e) ()
+stripType (EMacro' x e _) = EMacro' x (stripType e) ()
 stripType (EApply f xs _) = EApply (stripType f) (stripType <$> xs) ()
 stripType (EPair x y _) = EPair (stripType x) (stripType y) ()
 stripType (EAnnotation x t) = EAnnotation (stripType x) t
@@ -247,8 +253,10 @@ instance Render Untyped where
   render (EType z) = "[" <> render z <> "]"
   render EUnit = "()"
   render (ESymbol t ()) = render t
-  render (ELambda x e _ ()) = "(\\" <> render x <> " " <> render e <> ")"
-  render (ELambda' xs e _ ()) = "(\\" <> render xs <> " " <> render e <> ")"
+  render (ELambda _ _ _ ()) = "<lambda>"
+  render (ELambda' _ _ _ ()) = "<lambda>"
+  render (EMacro x e ()) = "(macro " <> render x <> " " <> render e <> ")"
+  render (EMacro' xs e ()) = "(macro " <> render xs <> " " <> render e <> ")"
   render p@(EPair l r ()) =
     case maybeList p of
       Just xs -> render xs
@@ -268,8 +276,10 @@ instance Render Typed where
   render (EType z) = "[" <> render z <> "] : Type"
   render EUnit = "() : ()"
   render (ESymbol t z) = render t <> " : " <> render z
-  render (ELambda x e _ z) = "(\\" <> render x <> " " <> render' e <> ") : " <> render z
-  render (ELambda' xs e _ z) = "(\\" <> render xs <> " " <> render' e <> ") : " <> render z
+  render (ELambda _ _ _ z) = "<lambda> : " <> render z
+  render (ELambda' _ _ _ z) = "<lambda> : " <> render z
+  render (EMacro x e z) = "(macro " <> render x <> " " <> render e <> ") : " <> render z
+  render (EMacro' xs e z) = "(macro " <> render xs <> " " <> render e <> ") : " <> render z
   render p@(EPair l r z) =
     case maybeList $ stripType p of
       Just xs -> render xs <> " : " <> render z
