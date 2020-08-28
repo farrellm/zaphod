@@ -4,8 +4,8 @@
 
 (def compose
      (forall a (forall b (forall c
-         (-> [(-> [b] c) (-> [a] b)]
-             (-> [a] c)))))
+       (-> [(-> [b] c) (-> [a] b)]
+           (-> [a] c)))))
      (lambda (f g) (lambda (x) (f (g x)))))
 
 (def car
@@ -36,14 +36,16 @@
 (def append
      (forall a (forall b (-> [a b] Top)))
      (lambda (xs ys)
-       (if (is-nil xs) (: ys Top)
-         (cons (car xs) (append (cdr xs) ys)))))
+       (if (is-nil xs)
+           (: ys Top)
+           (cons (car xs) (append (cdr xs) ys)))))
 
 (def reverse'
      (forall a (forall b (-> [a b] Top)))
      (lambda (xs ys)
-       (if (is-nil xs) (: ys Top)
-         (reverse' (cdr xs) (cons (car xs) ys)))))
+       (if (is-nil xs)
+           (: ys Top)
+           (reverse' (cdr xs) (cons (car xs) ys)))))
 
 (def reverse
      (forall a (-> [a] Top))
