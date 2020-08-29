@@ -18,7 +18,7 @@ import Prelude hiding (many, some)
 type Parser = Parsec Void Text
 
 spaceConsumer :: Parser ()
-spaceConsumer = L.space space1 (L.skipLineComment "--") (L.skipBlockComment "(*" "*)")
+spaceConsumer = L.space space1 (L.skipLineComment ";;") (L.skipBlockComment "(*" "*)")
 
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme spaceConsumer
