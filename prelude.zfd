@@ -72,3 +72,64 @@
      (-> [(Symbol . Top) Type Top] Top)
      (macro (p t e)
        ['def (car p) t ['lambda (cdr p) e]]))
+
+(defn (foralls xs e) (-> [Top Top] Top)
+  (if (is-nil xs)
+      e
+      (: ['forall (car xs) (foralls (cdr xs) e)]
+         Top)))
+
+(defn (constructor-simple n c) (-> [Top Top] Top)
+  ['def c n ['unsafe-coerce ['quote c]]])
+
+(defn (constructors-simple n cs) (-> [Top Top] Top)
+  (if (is-nil cs)
+      (: [] Top)
+      (cons
+       (constructor-simple n (car cs))
+       (constructors-simple n (cdr cs)))))
+
+(defn (constructor-complex n xs c) (-> [Top Top Top] Top)
+  (if (is-symbol c)
+      (: ['def c
+               (foralls xs (cons n xs))
+               ['unsafe-coerce ['quote c]]]
+         Top)
+      ['defn c
+        (foralls xs ['-> (cons 'tuple (cdr c)) (cons n xs)])
+        ['unsafe-coerce (cons 'tuple (cons ['quote (car c)] (cdr c)))]]))
+
+(defn (constructors-complex n xs cs) (-> [Top Top Top] Top)
+  (if (is-nil cs)
+      (: [] Top)
+      (cons
+       (constructor-complex n xs (car cs))
+       (constructors-complex n xs (cdr cs)))))
+
+(defn (data-simple n cs) (-> [Top Top] Top)
+  (cons
+   ['def n 'Type ['quote n]]
+   (constructors-simple n cs)))
+
+(defn (data-complex n xs cs) (-> [Top Top Top] Top)
+  (cons
+   ['def n ['lambda xs [': (cons 'tuple (cons ['quote n] xs)) 'Type]]]
+   (constructors-complex n xs cs)))
+
+(defn (data' d cs) (-> [Top Top] Top)
+  (cons 'begin
+        (if (is-symbol d)
+            (data-simple d cs)
+            (data-complex (car d) (cdr d) cs))))
+
+(def data
+     (-> Top Top)
+     (macro d (data' (car d) (cdr d))))
+
+(data (Maybe a)
+      Nothing
+      (Just a))
+
+(data (Either a b)
+      (Left a)
+      (Right b))
