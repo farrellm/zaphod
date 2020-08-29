@@ -67,3 +67,8 @@
 (def let
      (-> [Top Top] Top)
      (macro (ps e) (let' ps e)))
+
+(def defn
+     (-> [(Symbol . Top) Type Top] Top)
+     (macro (p t e)
+       ['def (car p) t ['lambda (cdr p) e]]))
