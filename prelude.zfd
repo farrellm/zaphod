@@ -133,3 +133,15 @@
 (data (Either a b)
       (Left a)
       (Right b))
+
+(defn (not p)
+  (-> [Bool] Bool)
+  (if p
+      False
+      True))
+
+(defn (maybe d f m)
+  (forall a (forall b (-> [b (-> [a] b) (Maybe a)] b)))
+  (if (is-symbol m)
+      d
+      (f (unsafe-coerce (cadr m)))))
