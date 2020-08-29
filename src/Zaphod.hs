@@ -37,12 +37,12 @@ emptyZState =
 
 evalText :: forall m. (MonadState ZState m, MonadException m, MonadIO m) => Text -> m ()
 evalText t =
-  case parse token "<cmd>" t of
+  case parse tokens "<cmd>" t of
     Left e -> do
       putStrLn (errorBundlePretty e)
-    Right r -> do
-      r' <- evaluateTopLevel r
-      putTextLn (render r')
+    Right rs -> do
+      rs' <- traverse evaluateTopLevel rs
+      traverse_ (putTextLn . render) rs'
 
 repl :: forall m. (MonadState ZState m, MonadException m, MonadIO m) => Maybe Text -> m ()
 repl _ = do
