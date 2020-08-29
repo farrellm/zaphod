@@ -87,11 +87,13 @@ zaphod = do
   args <- execParser opts
   case _path args of
     Just p -> evaluatingStateT emptyZState $ do
+      runFile "base.zfd"
       runFile "prelude.zfd"
       runFile p
       traverse_ evalText $ _cmd args
       when (_repl args) $ repl Nothing
     Nothing -> evaluatingStateT emptyZState $ do
+      runFile "base.zfd"
       runFile "prelude.zfd"
       case _cmd args of
         Just c -> do
