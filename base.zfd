@@ -28,7 +28,9 @@
               (-> [a] c)))
   (lambda (x) (f (g x))))
 
+(def caar (compose car car))
 (def cadr (compose car cdr))
+(def cdar (compose cdr car))
 (def cddr (compose cdr cdr))
 (def caddr (compose car cddr))
 
@@ -101,3 +103,16 @@
 (def data
      (-> Top Top)
      (macro d (data' (car d) (cdr d))))
+
+(defn (cond' cs)
+  (-> [Top] Top)
+  (if (is-nil cs) (: () Top)
+      (let ((c (car cs))
+            (cs' (cdr cs)))
+        (if (is-symbol (car c))
+            (: (cadr c) Top)
+            ['if (car c) (cadr c) (cond' cs')]))))
+
+(def cond
+     (-> Top Top)
+     (macro cs (cond' cs)))
