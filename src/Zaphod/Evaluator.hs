@@ -261,7 +261,7 @@ macroExpand1 w = do
       pure w'
   where
     go :: (MonadReader Environment m, MonadState CheckerState m) => Raw -> m Raw
-    go a@(RPair (RSymbol s) b) =
+    go q@(RPair a@(RSymbol s) b) =
       case maybeList b of
         Just xs -> do
           f <- M.lookup s <$> ask
@@ -269,14 +269,23 @@ macroExpand1 w = do
             Just (EMacro v e _) -> do
               xs' <- traverse (analyzeUntyped . quote) xs
               x' <- evaluate =<< synthesize (EApply (ELambda v (stripType e) mempty ()) xs' ())
-              pure $ toRaw x'
+              checkResult x' xs
             Just (EMacro' vs e _) -> do
               xs' <- traverse (analyzeUntyped . quote) xs
               x' <- evaluate =<< synthesize (EApply (ELambda' vs (stripType e) mempty ()) xs' ())
-              pure $ toRaw x'
-            _ -> pure a
-        Nothing -> pure a
-    go z = pure z
+              checkResult x' xs
+            _ -> goList xs
+        Nothing -> RPair a <$> go b
+      where
+        checkResult x' xs = do
+          let q' = toRaw x'
+          if q' /= q
+            then pure q'
+            else goList xs
+
+        goList xs = fromList' . (a :) <$> traverse go xs
+    go (RPair l r) = RPair <$> go l <*> go r
+    go r = pure r
 
     quote e = RPair "quote" (RPair e RUnit)
 
@@ -290,7 +299,7 @@ macroExpand w = do
   w' <- macroExpand1 w
   if w == w'
     then pure w
-    else macroExpand1 w'
+    else macroExpand w'
 
 evaluateTopLevel' :: (MonadState ZState m) => Raw -> m Typed
 evaluateTopLevel' (RPair "def" (RPair (RSymbol s) (RPair e RUnit))) = do
