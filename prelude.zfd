@@ -1,0 +1,47 @@
+(data Bool
+      False
+      True)
+
+(data (List a)
+      Nil)
+(defn (Cons x xs)
+  (forall (a) (-> [a (List a)] (List a)))
+  (unsafe-coerce ['Cons x xs]))
+
+(data (Maybe a)
+      Nothing
+      (Just a))
+
+(data (Either a b)
+      (Left a)
+      (Right b))
+
+(defn (id x)
+  (forall (a) (-> [a] a))
+  x)
+
+(defn (append xs ys)
+  (forall (a b) (-> [a b] Top))
+  (if (is-nil xs)
+      (: ys Top)
+      (cons (car xs) (append (cdr xs) ys))))
+
+(defn (reverse' xs ys)
+  (forall (a b) (-> [a b] Top))
+  (if (is-nil xs)
+      (: ys Top)
+      (reverse' (cdr xs) (cons (car xs) ys))))
+
+(defn (reverse xs)
+  (forall a (-> [a] Top))
+  (reverse' xs ()))
+
+(defn (not p)
+  (-> [Bool] Bool)
+  (if p False True))
+
+(defn (maybe d f m)
+  (forall (a b) (-> [b (-> [a] b) (Maybe a)] b))
+  (if (is-symbol m)
+      d
+      (f (unsafe-coerce (cadr m)))))

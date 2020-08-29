@@ -1,13 +1,3 @@
-(def id
-     (forall a (-> [a] a))
-     (lambda (x) x))
-
-(def compose
-     (forall a (forall b (forall c
-       (-> [(-> [b] c) (-> [a] b)]
-           (-> [a] c)))))
-     (lambda (f g) (lambda (x) (f (g x)))))
-
 (def car
      (forall a (-> [a] Top))
      (unsafe-coerce fst))
@@ -15,65 +5,50 @@
 (def cdr (forall a (-> [a] Top))
      (unsafe-coerce snd))
 
-(def cadr (compose car cdr))
-(def cddr (compose cdr cdr))
-(def caddr (compose car cddr))
-
-(def Bool Type
-     'Bool)
-(def Bool (: 'Bool Type))
-(def True Bool
-     (unsafe-coerce 'True))
-(def False Bool
-     (unsafe-coerce 'False))
-
-(def List (lambda (a) (: ['List a] Type)))
-(def Nil (forall a (List a))
-     (unsafe-coerce 'Nil))
-(def Cons (forall a (-> [a (List a)] (List a)))
-     (lambda (x xs) (unsafe-coerce ['Cons x xs])))
-
-(def append
-     (forall a (forall b (-> [a b] Top)))
-     (lambda (xs ys)
-       (if (is-nil xs)
-           (: ys Top)
-           (cons (car xs) (append (cdr xs) ys)))))
-
-(def reverse'
-     (forall a (forall b (-> [a b] Top)))
-     (lambda (xs ys)
-       (if (is-nil xs)
-           (: ys Top)
-           (reverse' (cdr xs) (cons (car xs) ys)))))
-
-(def reverse
-     (forall a (-> [a] Top))
-     (lambda (xs) (reverse' xs ())))
-
-(def let1
-     (-> [Top Top Top] Top)
-     (lambda (x v e)
-       [['lambda [x] e] v]))
-
-(def let'
-     (-> [Top Top] Top)
-     (lambda (ps e)
-       (if (is-nil ps) e
-           (let1 (car (car ps))
-                 (cadr (car ps))
-                 (let' (cdr ps) e)))))
-
-(def let
-     (-> [Top Top] Top)
-     (macro (ps e) (let' ps e)))
-
 (def defn
      (-> [(Symbol . Top) Type Top] Top)
      (macro (p t e)
        ['def (car p) t ['lambda (cdr p) e]]))
 
-(defn (foralls xs e) (-> [Top Top] Top)
+(defn (forall' us e)
+  (-> [Top Top] Top)
+  (if (is-symbol us)
+      (: ['forall us e] Top)
+      (if (is-nil us)
+          e
+          (: ['forall (car us) (forall' (cdr us) e)] Top))))
+
+(def forall
+     (-> [Top Top] Top)
+     (macro (us e) (forall' us e)))
+
+(defn (compose f g)
+  (forall (a b c)
+          (-> [(-> [b] c) (-> [a] b)]
+              (-> [a] c)))
+  (lambda (x) (f (g x))))
+
+(def cadr (compose car cdr))
+(def cddr (compose cdr cdr))
+(def caddr (compose car cddr))
+
+(defn (let1 x v e)
+  (-> [Top Top Top] Top)
+  [['lambda [x] e] v])
+
+(defn (let' ps e)
+  (-> [Top Top] Top)
+  (if (is-nil ps) e
+      (let1 (car (car ps))
+            (cadr (car ps))
+            (let' (cdr ps) e))))
+
+(def let
+     (-> [Top Top] Top)
+     (macro (ps e) (let' ps e)))
+
+(defn (foralls xs e)
+  (-> [Top Top] Top)
   (if (is-nil xs)
       e
       (: ['forall (car xs) (foralls (cdr xs) e)]
@@ -117,31 +92,12 @@
    (constructors-complex n xs cs)))
 
 (defn (data' d cs) (-> [Top Top] Top)
-  (cons 'begin
-        (if (is-symbol d)
-            (data-simple d cs)
-            (data-complex (car d) (cdr d) cs))))
+  (cons
+   'begin
+   (if (is-symbol d)
+       (data-simple d cs)
+       (data-complex (car d) (cdr d) cs))))
 
 (def data
      (-> Top Top)
      (macro d (data' (car d) (cdr d))))
-
-(data (Maybe a)
-      Nothing
-      (Just a))
-
-(data (Either a b)
-      (Left a)
-      (Right b))
-
-(defn (not p)
-  (-> [Bool] Bool)
-  (if p
-      False
-      True))
-
-(defn (maybe d f m)
-  (forall a (forall b (-> [b (-> [a] b) (Maybe a)] b)))
-  (if (is-symbol m)
-      d
-      (f (unsafe-coerce (cadr m)))))
