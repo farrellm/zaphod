@@ -8,8 +8,19 @@ module Zaphod.Base
   )
 where
 
+import Control.Concurrent.MVar (modifyMVar)
 import qualified Data.Map as M
+import System.IO.Unsafe (unsafePerformIO)
 import Zaphod.Types
+
+gensymRef :: MVar Int
+{-# NOINLINE gensymRef #-}
+gensymRef = unsafePerformIO (newMVar 0)
+
+gensym :: IO Symbol
+gensym = do
+  r <- modifyMVar gensymRef $ \i -> pure (i + 1, i)
+  pure $ Symbol ("#<gen>" <> show r)
 
 data EvaluatorBug = TypeMismatch Typed Text
   deriving (Show)
@@ -63,6 +74,9 @@ baseEnvironment =
       ("is-nil", ENative1 (Native1 isNil) zPred),
       ("is-symbol", ENative1 (Native1 isSymbol) zPred),
       ("symbol-eq", ENative2 (Native2 eq) zSymbolEq),
+      ( "unsafe-gensym",
+        ENativeIO (NativeIO (ESymbol <$> gensym <*> pure ZSymbol)) zUnsafeGensym
+      ),
       -- Special forms
       ("if", ESpecial zIf),
       -- bypass type checker
@@ -75,6 +89,7 @@ baseEnvironment =
     zZCons = ZFunction (zTuple2 (ZType 0) (ZType 0)) (ZType 0)
     zIf = ZForall a $ ZFunction (zTuple3 zBool za za) za
     zUnsafeCoerce = ZForall a . ZForall b $ ZFunction (zTuple1 za) zb
+    zUnsafeGensym = ZFunction ZUnit ZSymbol
     --
     zPred = ZForall a (ZFunction (zTuple1 za) zBool)
     zSymbolEq = ZFunction (zTuple2 ZSymbol ZSymbol) zBool
@@ -82,8 +97,8 @@ baseEnvironment =
     isNil _ = zFalse
     isSymbol (ESymbol _ _) = zTrue
     isSymbol _ = zFalse
-    eq a b
-      | a == b = zTrue
+    eq x y
+      | x == y = zTrue
       | otherwise = zFalse
 
 getType :: Typed -> ZType

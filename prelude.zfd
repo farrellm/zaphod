@@ -2,12 +2,6 @@
       False
       True)
 
-(data (List a)
-      Nil)
-(defn (Cons x xs)
-  (forall (a) (-> [a (List a)] (List a)))
-  (unsafe-coerce ['Cons x xs]))
-
 (data (Maybe a)
       Nothing
       (Just a))
@@ -15,6 +9,14 @@
 (data (Either a b)
       (Left a)
       (Right b))
+
+(data (List a)
+      Nil
+      (Cons a (List a)))
+
+(data Nat
+      Z
+      (S Nat))
 
 (defn (id x)
   (forall (a) (-> [a] a))

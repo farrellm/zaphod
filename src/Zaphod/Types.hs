@@ -161,6 +161,7 @@ data Expr t
   | EQuote (Expr t) t
   | ENative1 Native1 t
   | ENative2 Native2 t
+  | ENativeIO NativeIO t
   | ESpecial t
   deriving (Show, Eq, Functor, Foldable, Traversable)
 
@@ -179,6 +180,14 @@ instance Eq Native2 where
 
 instance Show Native2 where
   show _ = "Native2 <native2>"
+
+newtype NativeIO = NativeIO (IO Typed)
+
+instance Eq NativeIO where
+  _ == _ = bug EqUndefined
+
+instance Show NativeIO where
+  show _ = "NativeIO <nativeIO>"
 
 type Untyped = Expr ()
 
@@ -231,6 +240,7 @@ exprType (EApply _ _ t) = t
 exprType (EQuote _ t) = t
 exprType (ENative1 _ t) = t
 exprType (ENative2 _ t) = t
+exprType (ENativeIO _ t) = t
 exprType (ESpecial t) = t
 
 stripType :: Typed -> Untyped
@@ -247,6 +257,7 @@ stripType (EAnnotation x t) = EAnnotation (stripType x) t
 stripType (EQuote x _) = EQuote (stripType x) ()
 stripType (ENative1 f _) = ENative1 f ()
 stripType (ENative2 f _) = ENative2 f ()
+stripType (ENativeIO f _) = ENativeIO f ()
 stripType (ESpecial _) = bug StripTypeSpecial
 
 instance Render Untyped where
@@ -266,6 +277,7 @@ instance Render Untyped where
   render (EQuote t ()) = "'" <> render t
   render (ENative1 _ ()) = "<native1>"
   render (ENative2 _ ()) = "<native2>"
+  render (ENativeIO _ ()) = "<nativeIO>"
   render (ESpecial ()) = "<special>"
 
 render' :: Typed -> Text
@@ -289,6 +301,7 @@ instance Render Typed where
   render (EQuote x z) = "'" <> render' x <> " : " <> render z
   render (ENative1 _ z) = "<native1> : " <> render z
   render (ENative2 _ z) = "<native2> : " <> render z
+  render (ENativeIO _ z) = "<nativeIO> : " <> render z
   render (ESpecial z) = "<special> : " <> render z
 
 unwrapType :: Typed -> ZType

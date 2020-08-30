@@ -56,8 +56,19 @@
       (: ['forall (car xs) (foralls (cdr xs) e)]
          Top)))
 
+(defn (gen-syms xs)
+  (-> [Top] Top)
+  (if (is-nil xs) (: () Top)
+      (cons (unsafe-gensym) (gen-syms (cdr xs)))))
+
 (defn (constructor-simple n c) (-> [Top Top] Top)
-  ['def c n ['unsafe-coerce ['quote c]]])
+  (if (is-symbol c)
+      (: ['def c n ['unsafe-coerce ['quote c]]]
+         Top)
+      (let ((c' (cons (car c) (gen-syms (cdr c)))))
+        ['defn c'
+          ['-> (cons 'tuple (cdr c)) n]
+          ['unsafe-coerce (cons 'tuple (cons ['quote (car c')] (cdr c')))]])))
 
 (defn (constructors-simple n cs) (-> [Top Top] Top)
   (if (is-nil cs)
@@ -72,9 +83,10 @@
                (foralls xs (cons n xs))
                ['unsafe-coerce ['quote c]]]
          Top)
-      ['defn c
-        (foralls xs ['-> (cons 'tuple (cdr c)) (cons n xs)])
-        ['unsafe-coerce (cons 'tuple (cons ['quote (car c)] (cdr c)))]]))
+      (let ((c' (cons (car c) (gen-syms (cdr c)))))
+        ['defn c'
+          (foralls xs ['-> (cons 'tuple (cdr c)) (cons n xs)])
+          ['unsafe-coerce (cons 'tuple (cons ['quote (car c')] (cdr c')))]])))
 
 (defn (constructors-complex n xs cs) (-> [Top Top Top] Top)
   (if (is-nil cs)

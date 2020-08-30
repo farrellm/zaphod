@@ -341,6 +341,7 @@ check' (ELambda x e n ()) z@(ZFunction a b) = do
   applyCtxExpr (ELambda x e'' n z)
 check' (ENative1 _ ()) _ = bug Native
 check' (ENative2 _ ()) _ = bug Native
+check' (ENativeIO _ ()) _ = bug Native
 check' (ESpecial ()) _ = bug Special
 -- ->Pair
 check' (EPair e1 e2 ()) (ZPair b1 b2) = do
@@ -403,6 +404,7 @@ synthesize' (EMacro' xs e ()) = do
   applyCtxExpr (EMacro' xs e' (ZFunction (fromList' $ snd <$> alphaHats) betaHat))
 synthesize' (ENative1 _ ()) = bug Native
 synthesize' (ENative2 _ ()) = bug Native
+synthesize' (ENativeIO _ ()) = bug Native
 synthesize' (ESpecial ()) = bug Special
 -- ->E
 synthesize' (EApply e1 e2 ()) = do

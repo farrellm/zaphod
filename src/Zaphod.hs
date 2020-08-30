@@ -8,7 +8,6 @@ module Zaphod where
 
 import Options.Applicative
 import System.Console.Haskeline
-import System.IO.Unsafe (unsafePerformIO)
 import Text.Megaparsec (errorBundlePretty, parse)
 import Zaphod.Base
 import Zaphod.Checker
@@ -194,8 +193,8 @@ test = do
   print' (evaluated ifNil)
   print' (evaluated ifNil')
   where
-    print' :: (Render a) => a -> IO ()
-    print' = putTextLn . render
+    print' :: (Render a) => IO a -> IO ()
+    print' ioA = putTextLn . render =<< ioA
     --
     unit = "()"
     pair = "(().())"
@@ -222,10 +221,10 @@ test = do
     ifNil = "(if (is-nil ()) (: '() Top) (: [()] Top))"
     ifNil' = "(if (is-nil [()]) (: '() Top) (: [()] Top))"
     -- lambda2p = "(\\x.(\\y.(x.y)))"
-    parseTest t = unsafePerformIO $ case parse token "" t of
+    parseTest t = case parse token "" t of
       Left e -> die (errorBundlePretty e)
       Right v -> pure v
-    withZaphod = usingReader baseEnvironment . evaluatingStateT (emptyCheckerState baseEnvironment)
-    analyzed a = withZaphod (analyzeUntyped $ parseTest a)
-    synthesized a = withZaphod (synthesize <=< analyzeUntyped $ parseTest a)
-    evaluated a = withZaphod (evaluate <=< synthesize <=< analyzeUntyped $ parseTest a)
+    withZaphod = usingReaderT baseEnvironment . evaluatingStateT (emptyCheckerState baseEnvironment)
+    analyzed a = withZaphod (analyzeUntyped =<< parseTest a)
+    synthesized a = withZaphod (synthesize =<< analyzeUntyped =<< parseTest a)
+    evaluated a = withZaphod (evaluate =<< synthesize =<< analyzeUntyped =<< parseTest a)
