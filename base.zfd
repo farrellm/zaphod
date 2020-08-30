@@ -16,7 +16,7 @@
       (: ['forall us e] Top)
       (if (is-nil us)
           e
-          (: ['forall (car us) (forall' (cdr us) e)] Top))))
+          ['forall (car us) (forall' (cdr us) e)])))
 
 (def forall
      (-> [Top Top] Top)
@@ -53,8 +53,7 @@
   (-> [Top Top] Top)
   (if (is-nil xs)
       e
-      (: ['forall (car xs) (foralls (cdr xs) e)]
-         Top)))
+      ['forall (car xs) (foralls (cdr xs) e)]))
 
 (defn (gen-syms xs)
   (-> [Top] Top)
@@ -90,7 +89,7 @@
 
 (defn (constructors-complex n xs cs) (-> [Top Top Top] Top)
   (if (is-nil cs)
-      (: [] Top)
+      (: () Top)
       (cons
        (constructor-complex n xs (car cs))
        (constructors-complex n xs (cdr cs)))))
@@ -118,11 +117,12 @@
 
 (defn (cond' cs)
   (-> [Top] Top)
-  (if (is-nil cs) (: () Top)
+  (if (is-nil cs)
+      (: () Top)
       (let ((c (car cs))
             (cs' (cdr cs)))
         (if (is-symbol (car c))
-            (: (cadr c) Top)
+            (cadr c)
             ['if (car c) (cadr c) (cond' cs')]))))
 
 (def cond

@@ -23,6 +23,7 @@ data ZaphodBug
   | NotQuotable Untyped
   | UnexpectedUntyped Untyped
   | UnexpectedTyped Typed
+  | LambdaMissmatch [Variable] ZType
   | Native
   | Special
   | NotList Typed
@@ -300,8 +301,6 @@ instantiateR' x alphaHat = do
         %= solveExistential
           (ZFunction (ZExistential alphaHat1) (ZExistential alphaHat2))
           alphaHat
-      -- alphaHat1 `instantiateL` a1
-      -- a2 `instantiateR` alphaHat2
       (alphaHat1 `instantiateL`) =<< applyCtxType a1
       (`instantiateR` alphaHat2) =<< applyCtxType a2
     -- InstRPair
@@ -315,8 +314,6 @@ instantiateR' x alphaHat = do
         %= solveExistential
           (ZPair (ZExistential alphaHat1) (ZExistential alphaHat2))
           alphaHat
-      -- a1 `instantiateR` alphaHat1
-      -- a2 `instantiateR` alphaHat2
       (`instantiateR` alphaHat1) =<< applyCtxType a1
       (`instantiateR` alphaHat2) =<< applyCtxType a2
     -- InstRAllL
@@ -334,11 +331,17 @@ check' EUnit ZUnit = pure EUnit
 check' e (ZForall alpha a) = withUniversal alpha $ e `check` a
 -- ->|
 check' (ELambda x e n ()) z@(ZFunction a b) = do
-  context %= (CVariable x a <:)
-  e' <- e `check` b
-  e'' <- applyCtxExpr e'
-  context %= dropVar x
-  applyCtxExpr (ELambda x e'' n z)
+  e' <- checkFunction x e a b
+  applyCtxExpr (ELambda x e' n z)
+check' (ELambda' xs e n ()) z@(ZFunction a b) = do
+  e' <- checkFunction' xs e a b
+  applyCtxExpr (ELambda' xs e' n z)
+check' (EMacro x e ()) z@(ZFunction a b) = do
+  e'' <- checkFunction x e a b
+  applyCtxExpr (EMacro x e'' z)
+check' (EMacro' xs e ()) z@(ZFunction a b) = do
+  e'' <- checkFunction' xs e a b
+  applyCtxExpr (EMacro' xs e'' z)
 check' (ENative1 _ ()) _ = bug Native
 check' (ENative2 _ ()) _ = bug Native
 check' (ENativeIO _ ()) _ = bug Native
@@ -351,10 +354,28 @@ check' (EPair e1 e2 ()) (ZPair b1 b2) = do
 -- Sub
 check' e b = do
   a <- synthesize e
-  a' <- applyCtxExpr a
   b' <- applyCtxType b
-  exprType a' `subtype` b'
+  exprType a `subtype` b'
   applyCtxExpr a
+
+checkFunction ::
+  (MonadState CheckerState m) => Variable -> Untyped -> ZType -> ZType -> m Typed
+checkFunction x e a b = do
+  context %= (CVariable x a <:)
+  e' <- e `check` b
+  context %= dropVar x
+  pure e'
+
+checkFunction' ::
+  (MonadState CheckerState m) => [Variable] -> Untyped -> ZType -> ZType -> m Typed
+checkFunction' xs e a b = do
+  case maybeList a of
+    Just ts | length xs == length ts -> do
+      for_ (zip xs ts) $ \(x, t) -> context %= (CVariable x t <:)
+      e' <- e `check` b
+      for_ (reverse xs) $ \x -> context %= dropVar x
+      pure e'
+    _ -> bug $ LambdaMissmatch xs a
 
 synthesize' :: (MonadState CheckerState m) => Untyped -> m Typed
 -- Var
@@ -371,37 +392,17 @@ synthesize' (EAnnotation e a) = do
 synthesize' EUnit = pure EUnit
 -- ->|=>
 synthesize' (ELambda x e n ()) = do
-  alphaHat <- ZExistential <$> nextExtential
-  betaHat <- ZExistential <$> nextExtential
-  context %= (CVariable x alphaHat <:)
-  e' <- e `check` betaHat
-  context %= dropVar x
+  (e', alphaHat, betaHat) <- synthesizeFunction x e
   applyCtxExpr (ELambda x e' n (ZFunction alphaHat betaHat))
 synthesize' (ELambda' xs e n ()) = do
-  alphaHats <- forM xs $ \x -> (x,) . ZExistential <$> nextExtential
-  betaHat <- ZExistential <$> nextExtential
-  for_ alphaHats $ \(x, alphaHat) ->
-    context %= (CVariable x alphaHat <:)
-  e' <- e `check` betaHat
-  for_ (reverse alphaHats) $ \(x, _) ->
-    context %= dropVar x
-  applyCtxExpr (ELambda' xs e' n (ZFunction (fromList' $ snd <$> alphaHats) betaHat))
+  (e', alphaHats, betaHat) <- synthesizeFunction' xs e
+  applyCtxExpr (ELambda' xs e' n (ZFunction alphaHats betaHat))
 synthesize' (EMacro x e ()) = do
-  alphaHat <- ZExistential <$> nextExtential
-  betaHat <- ZExistential <$> nextExtential
-  context %= (CVariable x alphaHat <:)
-  e' <- e `check` betaHat
-  context %= dropVar x
+  (e', alphaHat, betaHat) <- synthesizeFunction x e
   applyCtxExpr (EMacro x e' (ZFunction alphaHat betaHat))
 synthesize' (EMacro' xs e ()) = do
-  alphaHats <- forM xs $ \x -> (x,) . ZExistential <$> nextExtential
-  betaHat <- ZExistential <$> nextExtential
-  for_ alphaHats $ \(x, alphaHat) ->
-    context %= (CVariable x alphaHat <:)
-  e' <- e `check` betaHat
-  for_ (reverse alphaHats) $ \(x, _) ->
-    context %= dropVar x
-  applyCtxExpr (EMacro' xs e' (ZFunction (fromList' $ snd <$> alphaHats) betaHat))
+  (e', alphaHats, betaHat) <- synthesizeFunction' xs e
+  applyCtxExpr (EMacro' xs e' (ZFunction alphaHats betaHat))
 synthesize' (ENative1 _ ()) = bug Native
 synthesize' (ENative2 _ ()) = bug Native
 synthesize' (ENativeIO _ ()) = bug Native
@@ -452,6 +453,28 @@ synthesize' (EQuote x ()) =
        in EPair l' r' (ZPair (exprType l') (exprType r'))
     synthesizeQuoted z = bug (NotQuotable z)
 
+synthesizeFunction ::
+  MonadState CheckerState m => Variable -> Untyped -> m (Typed, ZType, ZType)
+synthesizeFunction x e = do
+  alphaHat <- ZExistential <$> nextExtential
+  betaHat <- ZExistential <$> nextExtential
+  context %= (CVariable x alphaHat <:)
+  e' <- e `check` betaHat
+  context %= dropVar x
+  pure (e', alphaHat, betaHat)
+
+synthesizeFunction' ::
+  MonadState CheckerState m => [Variable] -> Untyped -> m (Typed, ZType, ZType)
+synthesizeFunction' xs e = do
+  alphaHats <- forM xs $ \x -> (x,) . ZExistential <$> nextExtential
+  betaHat <- ZExistential <$> nextExtential
+  for_ alphaHats $ \(x, alphaHat) ->
+    context %= (CVariable x alphaHat <:)
+  e' <- e `check` betaHat
+  for_ (reverse alphaHats) $ \(x, _) ->
+    context %= dropVar x
+  pure (e', fromList' (snd <$> alphaHats), betaHat)
+
 applySynth' :: (MonadState CheckerState m) => ZType -> Untyped -> m (Typed, ZType)
 -- ∀App
 applySynth' (ZForall alpha a) e = do
@@ -467,10 +490,10 @@ applySynth' (ZExistential alphaHat) e = do
   let f = ZFunction (ZExistential alphaHat1) (ZExistential alphaHat2)
   context %= solveExistential f alphaHat
   e' <- e `check` ZExistential alphaHat1
-  (,) <$> applyCtxExpr e' <*> applyCtxType (ZExistential alphaHat2)
+  (e',) <$> applyCtxType (ZExistential alphaHat2)
 -- ->App
 applySynth' (ZFunction a c) e = do
   e' <- e `check` a
-  (,) <$> applyCtxExpr e' <*> applyCtxType c
+  (e',) <$> applyCtxType c
 --
 applySynth' t e = bug $ CannotApply t e
