@@ -33,6 +33,8 @@ data EvaluatorError
   | BadRaw Typed
   | BadBegin Raw
   | Impossible
+  | NoMatches ZType
+  | MultipleMatches ZType [Typed]
   deriving (Show)
 
 instance Exception EvaluatorError
@@ -43,6 +45,7 @@ setType _ z@(EType _) = z
 setType z (ESymbol s _) = ESymbol s z
 setType z (ELambda x e env _) = ELambda x e env z
 setType z (ELambda' xs e env _) = ELambda' xs e env z
+setType z (EImplicit x e env _) = EImplicit x e env z
 setType z (EMacro x e _) = EMacro x e z
 setType z (EMacro' x e _) = EMacro' x e z
 setType z (EApply f xs _) = EApply f xs z
@@ -88,6 +91,12 @@ evaluate x = do
             vxs <- traverse (\(v, z) -> (v,) <$> eval z) $ zip vs xs
             local (\(_, n) -> (foldl' extend env vxs, n)) $ eval e
           | otherwise -> bug (ArgumentCount (length vs) (length xs))
+        EImplicit (Variable v) e env (ZFunction i _) -> do
+          (a, b) <- bimap (findOfType i) (findOfType i) <$> ask
+          case (M.toList a ++ M.toList b) of
+            [(_, s)] -> local (\(_, n) -> (M.insert v s env, n)) $ eval e
+            [] -> bug $ NoMatches i
+            ss -> bug $ MultipleMatches i (snd <$> ss)
         ENative1 (Native1 g) _ ->
           case xs of
             [a] -> g <$> eval a
@@ -101,6 +110,8 @@ evaluate x = do
             [] -> liftIO g
             _ -> bug (ArgumentCount 0 (length xs))
         _ -> bug (NotLambda f)
+      where
+        findOfType z = M.filter ((z ==) . exprType)
     eval p@(EPair _ _ _) = bug (UnanalyzedApply p)
     eval (ELambda v e _ t) = ELambda v e <$> (fst <$> ask) <*> pure t
     eval (ELambda' vs e _ t) = ELambda' vs e <$> (fst <$> ask) <*> pure t
@@ -180,6 +191,8 @@ analyzeUntyped (RPair "lambda" (RPair xs (RPair e RUnit))) =
   case mkParams xs of
     Just ps -> ELambda' ps <$> analyzeUntyped e <*> pure mempty <*> pure ()
     Nothing -> bug (InvalidParameters xs)
+analyzeUntyped (RPair "implicit" (RPair (RSymbol x) (RPair e RUnit))) =
+  EImplicit (Variable x) <$> analyzeUntyped e <*> pure mempty <*> pure ()
 analyzeUntyped (RPair "macro" (RPair (RSymbol x) (RPair e RUnit))) =
   EMacro (Variable x) <$> analyzeUntyped e <*> pure ()
 analyzeUntyped (RPair "macro" (RPair xs (RPair e RUnit))) =

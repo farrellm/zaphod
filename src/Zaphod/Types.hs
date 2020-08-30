@@ -153,6 +153,7 @@ data Expr t
   | ESymbol Symbol t
   | ELambda Variable (Expr t) Environment t
   | ELambda' [Variable] (Expr t) Environment t
+  | EImplicit Variable (Expr t) Environment t
   | EMacro Variable (Expr t) t
   | EMacro' [Variable] (Expr t) t
   | EApply (Expr t) [Expr t] t
@@ -231,6 +232,7 @@ exprType (EType _) = ZType 0
 exprType EUnit = ZUnit
 exprType (ELambda _ _ _ t) = t
 exprType (ELambda' _ _ _ t) = t
+exprType (EImplicit _ _ _ t) = t
 exprType (EMacro _ _ t) = t
 exprType (EMacro' _ _ t) = t
 exprType (EAnnotation _ t) = t
@@ -249,6 +251,7 @@ stripType EUnit = EUnit
 stripType (ESymbol s _) = ESymbol s ()
 stripType (ELambda x e n _) = ELambda x (stripType e) n ()
 stripType (ELambda' xs e n _) = ELambda' xs (stripType e) n ()
+stripType (EImplicit x e n _) = EImplicit x (stripType e) n ()
 stripType (EMacro x e _) = EMacro x (stripType e) ()
 stripType (EMacro' x e _) = EMacro' x (stripType e) ()
 stripType (EApply f xs _) = EApply (stripType f) (stripType <$> xs) ()
@@ -266,6 +269,7 @@ instance Render Untyped where
   render (ESymbol t ()) = render t
   render (ELambda _ _ _ ()) = "<lambda>"
   render (ELambda' _ _ _ ()) = "<lambda>"
+  render (EImplicit x e _ ()) = "(implicit " <> render x <> " " <> render e <> ")"
   render (EMacro x e ()) = "(macro " <> render x <> " " <> render e <> ")"
   render (EMacro' xs e ()) = "(macro " <> render xs <> " " <> render e <> ")"
   render p@(EPair l r ()) =
@@ -290,6 +294,7 @@ instance Render Typed where
   render (ESymbol t z) = render t <> " : " <> render z
   render (ELambda _ _ _ z) = "<lambda> : " <> render z
   render (ELambda' _ _ _ z) = "<lambda> : " <> render z
+  render (EImplicit x e _ z) = "(implicit " <> render x <> " " <> render e <> ") : " <> render z
   render (EMacro x e z) = "(macro " <> render x <> " " <> render e <> ") : " <> render z
   render (EMacro' xs e z) = "(macro " <> render xs <> " " <> render e <> ") : " <> render z
   render p@(EPair l r z) =

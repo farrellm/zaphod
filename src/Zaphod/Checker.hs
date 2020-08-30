@@ -27,6 +27,7 @@ data ZaphodBug
   | Native
   | Special
   | NotList Typed
+  | Impossible
   deriving (Show)
 
 instance Exception ZaphodBug
@@ -336,6 +337,9 @@ check' (ELambda x e n ()) z@(ZFunction a b) = do
 check' (ELambda' xs e n ()) z@(ZFunction a b) = do
   e' <- checkFunction' xs e a b
   applyCtxExpr (ELambda' xs e' n z)
+check' (EImplicit x e n ()) z@(ZFunction a b) = do
+  e' <- checkFunction x e a b
+  applyCtxExpr (ELambda x e' n z)
 check' (EMacro x e ()) z@(ZFunction a b) = do
   e'' <- checkFunction x e a b
   applyCtxExpr (EMacro x e'' z)
@@ -397,6 +401,9 @@ synthesize' (ELambda x e n ()) = do
 synthesize' (ELambda' xs e n ()) = do
   (e', alphaHats, betaHat) <- synthesizeFunction' xs e
   applyCtxExpr (ELambda' xs e' n (ZFunction alphaHats betaHat))
+synthesize' (EImplicit x e n ()) = do
+  (e', alphaHat, betaHat) <- synthesizeFunction x e
+  applyCtxExpr (EImplicit x e' n (ZFunction alphaHat betaHat))
 synthesize' (EMacro x e ()) = do
   (e', alphaHat, betaHat) <- synthesizeFunction x e
   applyCtxExpr (EMacro x e' (ZFunction alphaHat betaHat))
@@ -408,6 +415,11 @@ synthesize' (ENative2 _ ()) = bug Native
 synthesize' (ENativeIO _ ()) = bug Native
 synthesize' (ESpecial ()) = bug Special
 -- ->E
+synthesize' (EApply e1@(EImplicit _ _ _ _) [] ()) = do
+  e1' <- synthesize e1
+  case exprType e1' of
+    ZFunction _ c -> applyCtxExpr $ EApply e1' [] c
+    _ -> bug Impossible
 synthesize' (EApply e1 e2 ()) = do
   e1' <- synthesize e1
   (e2', c) <- exprType e1' `applySynth` fromList' e2
