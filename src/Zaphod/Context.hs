@@ -19,11 +19,11 @@ import qualified Data.Map as M
 import Zaphod.Types
 
 data ContextBug
-  = MissingMarkerInContext Existential Context
-  | MissingUniversalInContext Universal Context
-  | MissingVarInContext Variable Context
-  | MissingExistentialInContext Existential Context
-  | ExistentialAlreadySolved ZType Existential Context
+  = MissingMarkerInContext Existential
+  | MissingUniversalInContext Universal
+  | MissingVarInContext Variable
+  | MissingExistentialInContext Existential
+  | ExistentialAlreadySolved ZType Existential
   | UnexpectedExistentialInSolve Existential Existential
   | NotMonotype ZType
   | WellFormedUntyped Untyped
@@ -32,11 +32,11 @@ data ContextBug
 instance Exception ContextBug
 
 wind :: Existential -> Context -> (Hole, Context)
-wind e ctx@(Context cs) =
+wind e (Context cs) =
   let (l, r) = go cs []
    in (Hole e r, Context l)
   where
-    go [] _ = bug $ MissingExistentialInContext e ctx
+    go [] _ = bug $ MissingExistentialInContext e
     go (CUnsolved f : ds) rs | e == f = (ds, rs)
     go (d : ds) rs = go ds (d : rs)
 
@@ -68,25 +68,25 @@ lookupVar t (Context es) = go es
 e <: Context cs = Context (e : cs)
 
 dropMarker :: Existential -> Context -> Context
-dropMarker a ctx@(Context es) = Context $ go es
+dropMarker a (Context es) = Context $ go es
   where
     go (CMarker b : rs) | a == b = rs
     go (_ : rs) = go rs
-    go [] = bug $ MissingMarkerInContext a ctx
+    go [] = bug $ MissingMarkerInContext a
 
 dropUniversal :: Universal -> Context -> Context
-dropUniversal a ctx@(Context es) = Context $ go es
+dropUniversal a (Context es) = Context $ go es
   where
     go (CUniversal b : rs) | a == b = rs
     go (_ : rs) = go rs
-    go [] = bug $ MissingUniversalInContext a ctx
+    go [] = bug $ MissingUniversalInContext a
 
 dropVar :: Variable -> Context -> Context
-dropVar a ctx@(Context es) = Context $ go es
+dropVar a (Context es) = Context $ go es
   where
     go (CVariable b _ : rs) | a == b = rs
     go (_ : rs) = go rs
-    go [] = bug $ MissingVarInContext a ctx
+    go [] = bug $ MissingVarInContext a
 
 substitute :: ZType -> ZType -> ZType -> ZType
 substitute x y z | z == y = x
@@ -96,14 +96,14 @@ substitute x y (ZPair a b) = ZPair (substitute x y a) (substitute x y b)
 substitute _ _ z = z
 
 solveExistential :: ZType -> Existential -> Context -> Context
-solveExistential z e ctx@(Context cs) = Context $ go cs
+solveExistential z e (Context cs) = Context $ go cs
   where
     go (CUnsolved f : rs) | e == f = CSolved f z : rs
-    go (CSolved f _y : _) | e == f = bug $ ExistentialAlreadySolved z e ctx
+    go (CSolved f _y : _) | e == f = bug $ ExistentialAlreadySolved z e
     go (CSolved f q : rs) = CSolved f ((z `substitute` ZExistential e) q) : go rs
     go (CVariable x q : rs) = CVariable x ((z `substitute` ZExistential e) q) : go rs
     go (r : rs) = r : go rs
-    go [] = bug $ MissingExistentialInContext e ctx
+    go [] = bug $ MissingExistentialInContext e
 
 isWellFormed :: ZType -> Context -> Bool
 isWellFormed ZTop _ = True
