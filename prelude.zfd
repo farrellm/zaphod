@@ -47,3 +47,8 @@
   (if (is-symbol m)
       d
       (f (unsafe-coerce (cadr m)))))
+
+(defn (curry f x)
+  (forall (a b c) (-> [(-> (cons b a) c) b]
+                      (-> a c)))
+  (lambda y (apply f (cons x y))))

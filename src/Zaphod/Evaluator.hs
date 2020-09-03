@@ -80,6 +80,22 @@ evaluate x = do
             then eval a
             else eval b
         _ -> bug (ArgumentCount 3 (length xs))
+    eval (EApply (ESymbol "apply" _) [f, xs] r) = do
+      f' <- eval f
+      xs' <- eval xs
+      setType r <$> case (f', maybeList xs') of
+        (ELambda (Variable v) e env _, _) -> do
+          local (\(_, n) -> (M.insert v xs' env, n)) $ eval e
+        (EImplicit (Variable v) e env _, _) -> do
+          local (\(_, n) -> (M.insert v xs' env, n)) $ eval e
+        (ELambda' vs e env _, Just ys) -> do
+          let vxs = zip vs ys
+          local (\(_, n) -> (foldl' extend env vxs, n)) $ eval e
+        (ENative1 (Native1 g) _, Just [a]) ->
+          pure $ g a
+        (ENative2 (Native2 g) _, Just [a, b]) ->
+          pure $ g a b
+        _ -> bug Impossible
     eval (EApply f xs r) = do
       f' <- eval f
       setType r <$> case f' of

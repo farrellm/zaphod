@@ -73,12 +73,14 @@ baseEnvironment =
       --
       ("is-nil", ENative1 (Native1 isNil) zPred),
       ("is-symbol", ENative1 (Native1 isSymbol) zPred),
+      ("is-pair", ENative1 (Native1 isPair) zPred),
       ("symbol-eq", ENative2 (Native2 eq) zSymbolEq),
       ( "unsafe-gensym",
         ENativeIO (NativeIO (ESymbol <$> gensym <*> pure ZSymbol)) zUnsafeGensym
       ),
       -- Special forms
       ("if", ESpecial zIf),
+      ("apply", ESpecial zApply),
       -- bypass type checker
       ("unsafe-coerce", ELambda' [Variable "x"] (ESymbol "x" zb) mempty zUnsafeCoerce)
     ]
@@ -88,6 +90,7 @@ baseEnvironment =
     zSnd = ZForall a . ZForall b $ ZFunction (zTuple1 (ZPair za zb)) zb
     zZCons = ZFunction (zTuple2 (ZType 0) (ZType 0)) (ZType 0)
     zIf = ZForall a $ ZFunction (zTuple3 zBool za za) za
+    zApply = ZForall a . ZForall b $ ZFunction (zTuple2 (ZFunction za zb) za) zb
     zUnsafeCoerce = ZForall a . ZForall b $ ZFunction (zTuple1 za) zb
     zUnsafeGensym = ZFunction ZUnit ZSymbol
     --
@@ -97,6 +100,8 @@ baseEnvironment =
     isNil _ = zFalse
     isSymbol (ESymbol _ _) = zTrue
     isSymbol _ = zFalse
+    isPair (EPair _ _ _) = zTrue
+    isPair _ = zFalse
     eq x y
       | x == y = zTrue
       | otherwise = zFalse
