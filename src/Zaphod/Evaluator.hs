@@ -27,7 +27,6 @@ data EvaluatorError
   | NotLambda Typed
   | ArgumentCount Int Int
   | InvalidParameters Raw
-  | InvalidTuple Raw
   | UnexpectedUntyped Untyped
   | MissingExistential Existential
   | BadRaw Typed
@@ -163,14 +162,6 @@ analyzeType (RPair "forall" (RPair (RSymbol u) (RPair z RUnit))) =
   ZForall (Universal u) <$> analyzeType z
 analyzeType (RPair "->" (RPair a (RPair b RUnit))) =
   ZFunction <$> analyzeType a <*> analyzeType b
-analyzeType (RPair "tuple" ts) = unwrapType' <$> mkTuple ts
-  where
-    mkTuple RUnit = pure $ EType ZUnit
-    mkTuple (RPair x xs) = do
-      x' <- analyzeType x
-      xs' <- mkTuple xs
-      pure $ EApply "zcons" [EType x', xs'] ()
-    mkTuple _ = bug (InvalidTuple ts)
 analyzeType (RPair "quote" (RPair x RUnit)) =
   pure . ZUntyped $ EQuote (EType $ quoteType x) ()
   where
@@ -178,6 +169,7 @@ analyzeType (RPair "quote" (RPair x RUnit)) =
     quoteType RUnit = ZUnit
     quoteType (RPair l r) = ZPair (quoteType l) (quoteType r)
     quoteType (RSymbol s) = ZValue $ ESymbol s ZSymbol
+analyzeType (RPair "cons" ts) = analyzeType (RPair "zcons" ts)
 analyzeType (RPair a b) =
   case maybeList b of
     Just xs ->
@@ -220,14 +212,6 @@ analyzeUntyped (RPair ":" (RPair t (RPair "Type" RUnit))) = do
 analyzeUntyped (RPair ":" (RPair e (RPair t RUnit))) = do
   EAnnotation <$> analyzeUntyped e <*> evaluateRawType t
 analyzeUntyped (RPair "quote" (RPair x RUnit)) = pure $ EQuote (analyzeQuoted x) ()
-analyzeUntyped (RPair "tuple" ts) = mkTuple ts
-  where
-    mkTuple RUnit = pure EUnit
-    mkTuple (RPair e xs) = do
-      e' <- analyzeUntyped e
-      xs' <- mkTuple xs
-      pure $ EApply "cons" [e', xs'] ()
-    mkTuple _ = bug (InvalidTuple ts)
 analyzeUntyped (RPair a b) =
   case maybeList b of
     Just xs -> EApply <$> analyzeUntyped a <*> traverse analyzeUntyped xs <*> pure ()

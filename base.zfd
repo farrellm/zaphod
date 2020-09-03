@@ -1,9 +1,22 @@
 (def car
-     (forall a (-> [a] Top))
+     (forall a (-> (cons a ()) Top))
      (unsafe-coerce fst))
 
-(def cdr (forall a (-> [a] Top))
+(def cdr (forall a (-> (cons a ()) Top))
      (unsafe-coerce snd))
+
+(def tuple'
+     (-> (cons Top ()) Top)
+     (lambda (t)
+       (if (is-nil t) (: () Top)
+           (cons 'cons
+                 (cons (car t)
+                       (cons (tuple' (cdr t))
+                             ()))))))
+
+(def tuple
+     (-> Top Top)
+     (macro t (tuple' t)))
 
 (def defn
      (-> [(Symbol . Top) Type Top] Top)
