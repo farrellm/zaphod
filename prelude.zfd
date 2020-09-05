@@ -1,9 +1,9 @@
-(data Bool
-      False
-      True)
+(data (Bool)
+      (False)
+      (True))
 
 (data (Maybe a)
-      Nothing
+      (Nothing)
       (Just a))
 
 (data (Either a b)
@@ -11,12 +11,12 @@
       (Right b))
 
 (data (List a)
-      Nil
+      (Nil)
       (Cons a (List a)))
 
-(data Nat
-      Z
-      (S Nat))
+(data (Nat)
+      (Z)
+      (S (Nat)))
 
 (defn (id x)
   (forall (a) (-> [a] a))
@@ -39,8 +39,8 @@
   (reverse' xs ()))
 
 (defn (not p)
-  (-> [Bool] Bool)
-  (if p False True))
+  (-> [(Bool)] (Bool))
+  (if p (False) (True)))
 
 (defn (maybe d f m)
   (forall (a b) (-> [b (-> [a] b) (Maybe a)] b))

@@ -73,23 +73,8 @@
   (if (is-nil xs) (: () Top)
       (cons (unsafe-gensym) (gen-syms (cdr xs)))))
 
-(defn (constructor-simple n c) (-> [Top Top] Top)
-  (if (is-symbol c)
-      (: ['def c n ['unsafe-coerce ['quote c]]]
-         Top)
-      (let ((c' (cons (car c) (gen-syms (cdr c)))))
-        ['defn c'
-          ['-> (cons 'tuple (cdr c)) n]
-          ['unsafe-coerce (cons 'tuple (cons ['quote (car c')] (cdr c')))]])))
-
-(defn (constructors-simple n cs) (-> [Top Top] Top)
-  (if (is-nil cs)
-      (: [] Top)
-      (cons
-       (constructor-simple n (car cs))
-       (constructors-simple n (cdr cs)))))
-
-(defn (constructor-complex n xs c) (-> [Top Top Top] Top)
+(defn (constructor n xs c)
+  (-> [Symbol Top Top] Top)
   (if (is-symbol c)
       (: ['def c
                (foralls xs (cons n xs))
@@ -100,33 +85,26 @@
           (foralls xs ['-> (cons 'tuple (cdr c)) (cons n xs)])
           ['unsafe-coerce (cons 'tuple (cons ['quote (car c')] (cdr c')))]])))
 
-(defn (constructors-complex n xs cs) (-> [Top Top Top] Top)
+(defn (constructors n xs cs)
+  (-> [Symbol Top Top] Top)
   (if (is-nil cs)
       (: () Top)
       (cons
-       (constructor-complex n xs (car cs))
-       (constructors-complex n xs (cdr cs)))))
+       (constructor n xs (car cs))
+       (constructors n xs (cdr cs)))))
 
-(defn (data-simple n cs) (-> [Top Top] Top)
-  (cons
-   ['def n 'Type ['quote n]]
-   (constructors-simple n cs)))
-
-(defn (data-complex n xs cs) (-> [Top Top Top] Top)
-  (cons
-   ['def n ['lambda xs [': (cons 'tuple (cons ['quote n] xs)) 'Type]]]
-   (constructors-complex n xs cs)))
-
-(defn (data' d cs) (-> [Top Top] Top)
+(defn (data' n xs cs)
+  (-> [Symbol Top Top] Top)
   (cons
    'begin
-   (if (is-symbol d)
-       (data-simple d cs)
-       (data-complex (car d) (cdr d) cs))))
+   (cons
+    ['def n ['lambda xs [': (cons 'tuple (cons ['quote n] xs)) 'Type]]]
+    (constructors n xs cs))))
 
 (def data
-     (-> Top Top)
-     (macro d (data' (car d) (cdr d))))
+     (-> ((Symbol . Top) . Top) Top)
+     (macro d (data' (fst (fst d)) (cdar d) (cdr d))))
+
 
 (defn (cond' cs)
   (-> [Top] Top)

@@ -49,13 +49,13 @@ zTuple3 :: ZType -> ZType -> ZType -> ZType
 zTuple3 x y z = ZPair x $ zTuple2 y z
 
 zBool :: ZType
-zBool = ZValue (ESymbol "Bool" ZSymbol)
+zBool = zTuple1 (ZValue (ESymbol "Bool" ZSymbol))
 
 zTrue :: Typed
-zTrue = ESymbol "True" zBool
+zTrue = EPair (ESymbol "True" zBool) EUnit zBool
 
 zFalse :: Typed
-zFalse = ESymbol "False" zBool
+zFalse = EPair (ESymbol "False" zBool) EUnit zBool
 
 baseEnvironment :: Environment
 baseEnvironment =

@@ -288,9 +288,9 @@ macroExpand1 w = do
   usingReaderT env
     . evaluatingStateT (emptyCheckerState env)
     $ do
-      -- traceShowM (toString (render w))
+      -- traceM (toString (render w))
       w' <- go w
-      -- traceShowM (toString (render w'))
+      -- traceM (toString (render w'))
       pure w'
   where
     go q@(RPair a@(RSymbol s) b) =
