@@ -22,31 +22,35 @@
   (forall (a) (-> [a] a))
   x)
 
-(defn (append xs ys)
+(defn (top-append xs ys)
+  (forall (a b) (-> [a b] Top))
+  (top-foldr (lambda (x a) (: (cons x a) Top))
+             ys
+             xs))
+
+(defn (top-reverse' xs ys)
   (forall (a b) (-> [a b] Top))
   (if (is-nil xs)
       (: ys Top)
-      (cons (car xs) (append (cdr xs) ys))))
+      (top-reverse' (cdr xs) (cons (car xs) ys))))
 
-(defn (reverse' xs ys)
-  (forall (a b) (-> [a b] Top))
-  (if (is-nil xs)
-      (: ys Top)
-      (reverse' (cdr xs) (cons (car xs) ys))))
-
-(defn (reverse xs)
-  (forall a (-> [a] Top))
-  (reverse' xs ()))
+(defn (top-reverse xs)
+  (forall (a) (-> [a] Top))
+  (top-reverse' xs ()))
 
 (defn (not p)
   (-> [(Bool)] (Bool))
   (if p (False) (True)))
 
+(defn (unsafe-from-just m)
+  (forall (a) (-> [(Maybe a)] a))
+  (unsafe-coerce (cadr m)))
+
 (defn (maybe d f m)
   (forall (a b) (-> [b (-> [a] b) (Maybe a)] b))
-  (if (is-symbol m)
+  (if (top-eq m (Nothing))
       d
-      (f (unsafe-coerce (cadr m)))))
+      (f (unsafe-from-just m))))
 
 (defn (curry f x)
   (forall (a b c) (-> [(-> (cons b a) c) b]

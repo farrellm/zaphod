@@ -2,7 +2,8 @@
      (forall a (-> (cons a ()) Top))
      (unsafe-coerce fst))
 
-(def cdr (forall a (-> (cons a ()) Top))
+(def cdr
+     (forall a (-> (cons a ()) Top))
      (unsafe-coerce snd))
 
 (def tuple'
@@ -23,17 +24,38 @@
      (macro (p t e)
        ['def (car p) t ['lambda (cdr p) e]]))
 
-(defn (forall' us e)
+(def defmacro
+     (-> [(Symbol . Top) Type Top] Top)
+     (macro (p t e)
+       ['def (car p) t ['macro (cdr p) e]]))
+
+(defn (top-foldr f i l)
+  (forall a (forall b (-> [(-> [b a] a) a Top] a)))
+  (if (is-nil l) i
+      (f (unsafe-coerce (car l))
+         (top-foldr f i (cdr l)))))
+
+(defn (mk-forall u e)
+  (-> [Symbol Top] Top)
+  ['forall u e])
+
+(defmacro (forall us e)
   (-> [Top Top] Top)
   (if (is-symbol us)
-      (: ['forall us e] Top)
-      (if (is-nil us)
-          e
-          ['forall (car us) (forall' (cdr us) e)])))
+      (mk-forall (unsafe-coerce us) e)
+      (top-foldr mk-forall e us)))
 
-(def forall
-     (-> [Top Top] Top)
-     (macro (us e) (forall' us e)))
+(defn (top-foldl f i l)
+  (forall (a b) (-> [(-> [a b] a) a Top] a))
+  (if (is-nil l) i
+      (top-foldl f (f i (unsafe-coerce (car l))) (cdr l))))
+
+(defn (top-map f l)
+  (forall (a b) (-> [(-> [a] b) Top] Top))
+  (top-foldr (lambda (x ys)
+               (: (cons (f x) ys) Top))
+             ()
+             l))
 
 (defn (compose f g)
   (forall (a b c)
@@ -47,31 +69,24 @@
 (def cddr (compose cdr cdr))
 (def caddr (compose car cddr))
 
-(defn (let1 x v e)
-  (-> [Top Top Top] Top)
-  [['lambda [x] e] v])
+(defn (mk-let b e)
+  (forall a (-> [[Symbol Top] a] Top))
+  [['lambda [(fst b)] e] (fst (snd b))])
 
-(defn (let' ps e)
+(defmacro (let ps e)
   (-> [Top Top] Top)
-  (if (is-nil ps) e
-      (let1 (car (car ps))
-            (cadr (car ps))
-            (let' (cdr ps) e))))
-
-(def let
-     (-> [Top Top] Top)
-     (macro (ps e) (let' ps e)))
+  (top-foldr mk-let e ps))
 
 (defn (foralls xs e)
   (-> [Top Top] Top)
-  (if (is-nil xs)
-      e
-      ['forall (car xs) (foralls (cdr xs) e)]))
+  (top-foldr
+   (lambda (x e) (: ['forall x e] Top))
+   e
+   xs))
 
 (defn (gen-syms xs)
   (-> [Top] Top)
-  (if (is-nil xs) (: () Top)
-      (cons (unsafe-gensym) (gen-syms (cdr xs)))))
+  (top-map (lambda (_) (unsafe-gensym)) xs))
 
 (defn (constructor n xs c)
   (-> [Symbol Top Top] Top)
@@ -85,37 +100,35 @@
           (foralls xs ['-> (cons 'tuple (cdr c)) (cons n xs)])
           ['unsafe-coerce (cons 'tuple (cons ['quote (car c')] (cdr c')))]])))
 
-(defn (constructors n xs cs)
-  (-> [Symbol Top Top] Top)
-  (if (is-nil cs)
-      (: () Top)
-      (cons
-       (constructor n xs (car cs))
-       (constructors n xs (cdr cs)))))
-
 (defn (data' n xs cs)
   (-> [Symbol Top Top] Top)
   (cons
    'begin
    (cons
     ['def n ['lambda xs [': (cons 'tuple (cons ['quote n] xs)) 'Type]]]
-    (constructors n xs cs))))
+    (top-map (lambda (c) (constructor n xs c))
+             cs))))
 
 (def data
      (-> ((Symbol . Top) . Top) Top)
      (macro d (data' (fst (fst d)) (cdar d) (cdr d))))
 
-
-(defn (cond' cs)
-  (-> [Top] Top)
-  (if (is-nil cs)
+(defn (top-init xs)
+  (forall (a) (-> [a] Top))
+  (if (is-nil (cdr xs))
       (: () Top)
-      (let ((c (car cs))
-            (cs' (cdr cs)))
-        (if (is-symbol (car c))
-            (cadr c)
-            ['if (car c) (cadr c) (cond' cs')]))))
+      (cons (car xs) (top-init (cdr xs)))))
+
+(defn (top-last xs)
+  (forall (a) (-> [a] Top))
+  (if (is-nil (cdr xs))
+      (car xs)
+      (top-last (cdr xs))))
 
 (def cond
      (-> Top Top)
-     (macro cs (cond' cs)))
+     (macro cs
+       (top-foldr (: (lambda (c e) ['if (car c) (cadr c) e])
+                     (-> [[Top Top] Top] Top))
+                  (top-last cs)
+                  (top-init cs))))
