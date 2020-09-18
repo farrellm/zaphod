@@ -78,8 +78,7 @@ applyCtxType z@(ZExistential x) = do
   ctx <- use context
   case lookupType x ctx of
     RSolved t -> pure t
-    RUnsolved -> pure z
-    RMissing -> bug (MissingExistentialInContext x ctx)
+    _ -> pure z
 applyCtxType (ZFunction a b) = ZFunction <$> applyCtxType a <*> applyCtxType b
 applyCtxType (ZPair a b) = ZPair <$> applyCtxType a <*> applyCtxType b
 applyCtxType (ZForall a t) = ZForall a <$> applyCtxType t
