@@ -37,6 +37,10 @@ class MaybeList a where
   fromList' :: [a] -> a
   maybeList :: a -> Maybe [a]
 
+instance Render () where
+  render () = "()"
+  {-# INLINE render #-}
+
 instance Render a => Render [a] where
   render xs = "(" <> T.intercalate " " (render <$> xs) <> ")"
   {-# INLINE render #-}
@@ -358,7 +362,8 @@ makeLenses ''ZState
 
 data CheckerState = CheckerState
   { _context :: Context,
-    _existentialData :: Char
+    _existentialData :: Char,
+    _depth :: Int
   }
   deriving (Show)
 
@@ -368,5 +373,6 @@ emptyCheckerState :: Environment -> CheckerState
 emptyCheckerState env =
   CheckerState
     { _context = Context [CEnvironment env],
-      _existentialData = 'α'
+      _existentialData = 'α',
+      _depth = 0
     }

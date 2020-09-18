@@ -4,6 +4,7 @@
 
 module Zaphod.Checker (check, synthesize) where
 
+import qualified Data.Text as T
 import Lens.Micro.Mtl
 import Zaphod.Context
 import Zaphod.Types
@@ -16,9 +17,7 @@ data ZaphodError
 instance Exception ZaphodError
 
 data ZaphodBug
-  = MissingSubtypeCase ZType ZType Context
-  | MissingExistentialInContext Existential Context
-  | CannotApply ZType Untyped
+  = CannotApply ZType Untyped
   | NotMonotype ZType
   | NotQuotable Untyped
   | UnexpectedUntyped Untyped
@@ -135,63 +134,51 @@ isDeeper tau alphaHat = do
     dropExistential (Context (_ : rs)) = dropExistential $ Context rs
 
 subtype :: (MonadState CheckerState m) => ZType -> ZType -> m ()
-subtype a b = do
-  ctx <- use context
-  traceM' ("<sub " <> render a <> " <: " <> render b)
-  traceM' ("     " <> render ctx)
-  subtype' a b
-  ctx' <- use context
-  traceM' ("     " <> render ctx')
+subtype a b =
+  logInfo ("sub " <> render a <> " <: " <> render b) $
+    subtype' a b
 
 instantiateL :: (MonadState CheckerState m) => Existential -> ZType -> m ()
-instantiateL a b = do
-  ctx <- use context
-  traceM' ("<inL " <> render a <> " <: " <> render b)
-  traceM' ("     " <> render ctx)
-  instantiateL' a b
-  ctx' <- use context
-  traceM' (">    " <> render ctx')
+instantiateL a b =
+  logInfo ("inL " <> render a <> " =: " <> render b) $
+    instantiateL' a b
 
 instantiateR :: (MonadState CheckerState m) => ZType -> Existential -> m ()
-instantiateR a b = do
-  ctx <- use context
-  traceM' ("<inR " <> render a <> " := " <> render b)
-  traceM' ("     " <> render ctx)
-  instantiateR' a b
-  ctx' <- use context
-  traceM' (">    " <> render ctx')
+instantiateR a b =
+  logInfo ("inR " <> render a <> " := " <> render b) $
+    instantiateR' a b
 
 check :: (MonadState CheckerState m) => Untyped -> ZType -> m Typed
-check a b = do
-  ctx <- use context
-  traceM' ("<chk " <> render a <> " =: " <> render b)
-  traceM' ("     " <> render ctx)
-  res <- check' a b
-  ctx' <- use context
-  traceM' (">    " <> render ctx')
-  pure res
+check a b =
+  logInfo ("chk " <> render a <> " =: " <> render b) $
+    check' a b
 
 synthesize :: (MonadState CheckerState m) => Untyped -> m Typed
-synthesize a = do
-  ctx <- use context
-  traceM' ("<syn " <> render a)
-  traceM' ("     " <> render ctx)
-  res <- synthesize' a
-  ctx' <- use context
-  traceM' (">    " <> render res)
-  traceM' ("     " <> render ctx')
-  pure res
+synthesize a =
+  logInfo ("syn " <> render a) $
+    synthesize' a
 
 applySynth :: (MonadState CheckerState m) => ZType -> Untyped -> m (Typed, ZType)
-applySynth a b = do
+applySynth a b =
+  logInfo ("app " <> render a <> " =>> " <> render b) $
+    applySynth' a b
+
+logInfo :: (Render a, MonadState CheckerState m) => Text -> m a -> m a
+logInfo m x = do
+  i <- mkIndent
   ctx <- use context
-  traceM' ("<app " <> render a <> " =>> " <> render b)
-  traceM' ("     " <> render ctx)
-  res <- applySynth' a b
+  traceM' (i <> "<" <> m)
+  traceM' (i <> "|    " <> render ctx)
+  depth += 1
+  res <- x
+  depth -= 1
   ctx' <- use context
-  traceM' (">    " <> render res)
-  traceM' ("     " <> render ctx')
+  traceM' (i <> ">    " <> render res)
+  traceM' (i <> "     " <> render ctx')
   pure res
+  where
+    mkIndent :: (MonadState CheckerState m) => m Text
+    mkIndent = flip T.replicate "| " <$> use depth
 
 subtype' :: (MonadState CheckerState m) => ZType -> ZType -> m ()
 -- <:Top
