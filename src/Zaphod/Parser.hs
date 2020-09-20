@@ -90,14 +90,26 @@ quote = char '\'' *> (q <$> token)
   where
     q x = (RPair "quote" (RPair x RUnit))
 
+backquote :: Parser Raw
+backquote = char '`' *> (q <$> token)
+  where
+    q x = (RPair "backquote" (RPair x RUnit))
+
+unquote :: Parser Raw
+unquote = char ',' *> (q <$> token)
+  where
+    q x = (RPair "unquote" (RPair x RUnit))
+
 token :: Parser Raw
 token =
   try unit
+    <|> try quote
+    <|> try backquote
+    <|> try unquote
     <|> try symbol_
     <|> try pair
     <|> try tuple
     <|> try list
-    <|> try quote
 
 tokens :: Parser [Raw]
 tokens = (spaceConsumer <|> mempty) *> many token <* eof
