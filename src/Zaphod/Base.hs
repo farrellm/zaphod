@@ -74,7 +74,8 @@ baseEnvironment =
       ("is-nil", ENative1 (Native1 isNil) zPred),
       ("is-symbol", ENative1 (Native1 isSymbol) zPred),
       ("is-pair", ENative1 (Native1 isPair) zPred),
-      ("symbol-eq", ENative2 (Native2 eq) zSymbolEq),
+      ("symbol-eq", ENative2 (Native2 stripEq) zSymbolEq),
+      ("top-eq", ENative2 (Native2 stripEq) zTopEq),
       ( "unsafe-gensym",
         ENativeIO (NativeIO (ESymbol <$> gensym <*> pure ZSymbol)) zUnsafeGensym
       ),
@@ -96,15 +97,16 @@ baseEnvironment =
     --
     zPred = ZForall a (ZFunction (zTuple1 za) zBool)
     zSymbolEq = ZFunction (zTuple2 ZSymbol ZSymbol) zBool
+    zTopEq = ZForall a . ZForall b $ ZFunction (zTuple2 za zb) zBool
     isNil EUnit = zTrue
     isNil _ = zFalse
     isSymbol (ESymbol _ _) = zTrue
     isSymbol _ = zFalse
     isPair (EPair _ _ _) = zTrue
     isPair _ = zFalse
-    eq x y
-      | x == y = zTrue
-      | otherwise = zFalse
+    toZBool True = zTrue
+    toZBool False = zFalse
+    stripEq x y = toZBool (stripType x == stripType y)
 
 getType :: Typed -> ZType
 getType (EType z) = z
