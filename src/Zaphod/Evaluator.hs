@@ -8,6 +8,7 @@ module Zaphod.Evaluator
     evaluateType,
     evaluateTopLevel,
     analyzeUntyped,
+    macroExpand,
   )
 where
 
@@ -57,7 +58,7 @@ setType z (ENativeIO n _) = ENativeIO n z
 setType z (ESpecial _) = ESpecial z
 
 evaluate ::
-  (MonadReader Environment m, MonadState CheckerState m, MonadIO m) =>
+  (MonadReader Environment m, MonadIO m) =>
   Typed ->
   m Typed
 evaluate x = do
@@ -145,15 +146,16 @@ evaluate x = do
     extend env (Variable v, z) = M.insert v z env
 
 evaluateType ::
-  (MonadReader Environment m, MonadState CheckerState m, MonadIO m) =>
+  (MonadReader Environment m, MonadIO m) =>
   Untyped ->
   m ZType
 evaluateType u = do
-  t <- check u (ZType 0)
+  env <- ask
+  t <- evaluatingStateT (emptyCheckerState env) $ check u (ZType 0)
   unwrapType <$> evaluate t
 
 analyzeType ::
-  (MonadReader Environment m, MonadState CheckerState m, MonadIO m) =>
+  (MonadReader Environment m, MonadIO m) =>
   Raw ->
   m ZType
 analyzeType RUnit = pure ZUnit
@@ -188,7 +190,7 @@ mkParams (RPair (RSymbol z) zs) = (Variable z :) <$> mkParams zs
 mkParams _ = Nothing
 
 analyzeUntyped ::
-  (MonadReader Environment m, MonadState CheckerState m, MonadIO m) =>
+  (MonadReader Environment m, MonadIO m) =>
   Raw ->
   m Untyped
 analyzeUntyped RUnit = pure EUnit
@@ -272,7 +274,7 @@ evaluateRaw m x = do
     replaceExt _ z = z
 
 evaluateRawType ::
-  (MonadReader Environment m, MonadState CheckerState m, MonadIO m) =>
+  (MonadReader Environment m, MonadIO m) =>
   Raw ->
   m ZType
 evaluateRawType t = do
@@ -282,16 +284,11 @@ evaluateRawType t = do
     stripExpr (ZUntyped u) = u
     stripExpr z = EType z
 
-macroExpand1 :: (MonadState ZState m, MonadIO m) => Raw -> m Raw
+macroExpand1 :: (MonadReader Environment m, MonadIO m) => Raw -> m Raw
 macroExpand1 w = do
-  env <- _environment <$> get
-  usingReaderT env
-    . evaluatingStateT (emptyCheckerState env)
-    $ do
-      -- traceM (toString (render w))
-      w' <- go w
-      -- traceM (toString (render w'))
-      pure w'
+  env <- ask
+  evaluatingStateT (emptyCheckerState env) $ do
+    go w
   where
     go q@(RPair a@(RSymbol s) b) =
       case maybeList b of
@@ -326,7 +323,7 @@ macroExpand1 w = do
     toRaw (EPair l r _) = RPair (toRaw l) (toRaw r)
     toRaw e = bug $ BadRaw e
 
-macroExpand :: (MonadState ZState m, MonadIO m) => Raw -> m Raw
+macroExpand :: (MonadReader Environment m, MonadIO m) => Raw -> m Raw
 macroExpand w = do
   w' <- macroExpand1 w
   if w == w'
@@ -354,4 +351,7 @@ evaluateTopLevel' e = do
   evaluateRaw Nothing e
 
 evaluateTopLevel :: (MonadState ZState m, MonadIO m) => Raw -> m Typed
-evaluateTopLevel = evaluateTopLevel' <=< macroExpand
+evaluateTopLevel r = do
+  env <- _environment <$> get
+  r' <- runReaderT (macroExpand r) env
+  evaluateTopLevel' r'
