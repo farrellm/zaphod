@@ -22,7 +22,7 @@ gensym = do
   r <- modifyMVar gensymRef $ \i -> pure (i + 1, i)
   pure $ Symbol ("#<gen>" <> show r)
 
-data EvaluatorBug = TypeMismatch Typed Text
+data EvaluatorBug = TypeMismatch (Typed ()) Text
   deriving (Show)
 
 instance Exception EvaluatorBug
@@ -49,41 +49,41 @@ zTuple3 :: ZType -> ZType -> ZType -> ZType
 zTuple3 x y z = ZPair x $ zTuple2 y z
 
 zBool :: ZType
-zBool = zTuple1 (ZValue (ESymbol "Bool" ZSymbol))
+zBool = zTuple1 (ZValue (ESymbol "Bool" ZSymbol ()))
 
-zTrue :: Typed
-zTrue = EPair (ESymbol "True" zBool) EUnit zBool
+zTrue :: Typed ()
+zTrue = EPair (ESymbol "True" zBool ()) (EUnit ()) zBool ()
 
-zFalse :: Typed
-zFalse = EPair (ESymbol "False" zBool) EUnit zBool
+zFalse :: Typed ()
+zFalse = EPair (ESymbol "False" zBool ()) (EUnit ()) zBool ()
 
 baseEnvironment :: Environment
 baseEnvironment =
   M.fromList
     [ -- Native values
-      ("Top", EType ZTop),
-      ("Symbol", EType ZSymbol),
-      ("Type", EType (ZType 0)),
+      ("Top", EType ZTop ()),
+      ("Symbol", EType ZSymbol ()),
+      ("Type", EType (ZType 0) ()),
       -- Native functions
-      ("zcons", ENative2 (Native2 $ \l r -> EType (ZPair (getType l) (getType r))) zZCons),
+      ("zcons", ENative2 (Native2 $ \l r -> EType (ZPair (getType l) (getType r)) ()) zZCons ()),
       --
-      ("cons", ENative2 (Native2 $ \l r -> EPair l r (ZPair (exprType l) (exprType r))) zCons),
-      ("fst", ENative1 (Native1 $ fst . getPair) zFst),
-      ("snd", ENative1 (Native1 $ snd . getPair) zSnd),
+      ("cons", ENative2 (Native2 $ \l r -> EPair l r (ZPair (exprType l) (exprType r)) ()) zCons ()),
+      ("fst", ENative1 (Native1 $ fst . getPair) zFst ()),
+      ("snd", ENative1 (Native1 $ snd . getPair) zSnd ()),
       --
-      ("is-nil", ENative1 (Native1 isNil) zPred),
-      ("is-symbol", ENative1 (Native1 isSymbol) zPred),
-      ("is-pair", ENative1 (Native1 isPair) zPred),
-      ("symbol-eq", ENative2 (Native2 stripEq) zSymbolEq),
-      ("top-eq", ENative2 (Native2 stripEq) zTopEq),
+      ("is-nil", ENative1 (Native1 isNil) zPred ()),
+      ("is-symbol", ENative1 (Native1 isSymbol) zPred ()),
+      ("is-pair", ENative1 (Native1 isPair) zPred ()),
+      ("symbol-eq", ENative2 (Native2 stripEq) zSymbolEq ()),
+      ("top-eq", ENative2 (Native2 stripEq) zTopEq ()),
       ( "unsafe-gensym",
-        ENativeIO (NativeIO (ESymbol <$> gensym <*> pure ZSymbol)) zUnsafeGensym
+        ENativeIO (NativeIO (ESymbol <$> gensym <*> pure ZSymbol <*> pure ())) zUnsafeGensym ()
       ),
       -- Special forms
-      ("if", ESpecial zIf),
-      ("apply", ESpecial zApply),
+      ("if", ESpecial zIf ()),
+      ("apply", ESpecial zApply ()),
       -- bypass type checker
-      ("unsafe-coerce", ELambda' [Variable "x"] (ESymbol "x" zb) mempty zUnsafeCoerce)
+      ("unsafe-coerce", ELambda' [Variable "x"] (ESymbol "x" zb ()) mempty zUnsafeCoerce ())
     ]
   where
     zCons = ZForall a . ZForall b $ ZFunction (zTuple2 za zb) (ZPair za zb)
@@ -98,20 +98,20 @@ baseEnvironment =
     zPred = ZForall a (ZFunction (zTuple1 za) zBool)
     zSymbolEq = ZFunction (zTuple2 ZSymbol ZSymbol) zBool
     zTopEq = ZForall a . ZForall b $ ZFunction (zTuple2 za zb) zBool
-    isNil EUnit = zTrue
+    isNil (EUnit _) = zTrue
     isNil _ = zFalse
-    isSymbol (ESymbol _ _) = zTrue
+    isSymbol (ESymbol _ _ _) = zTrue
     isSymbol _ = zFalse
-    isPair (EPair _ _ _) = zTrue
+    isPair (EPair _ _ _ _) = zTrue
     isPair _ = zFalse
     toZBool True = zTrue
     toZBool False = zFalse
     stripEq x y = toZBool (stripType x == stripType y)
 
-getType :: Typed -> ZType
-getType (EType z) = z
-getType e = bug $ TypeMismatch e "Type"
+getType :: Typed l -> ZType
+getType (EType z _) = z
+getType e = bug $ TypeMismatch (stripLocation e) "Type"
 
-getPair :: Typed -> (Typed, Typed)
-getPair (EPair l r _) = (l, r)
-getPair e = bug $ TypeMismatch e "Pair"
+getPair :: Typed l -> (Typed l, Typed l)
+getPair (EPair l r _ _) = (l, r)
+getPair e = bug $ TypeMismatch (stripLocation e) "Pair"

@@ -26,7 +26,7 @@ data ContextBug
   | ExistentialAlreadySolved ZType Existential
   | UnexpectedExistentialInSolve Existential Existential
   | NotMonotype ZType
-  | WellFormedUntyped Untyped
+  | WellFormedUntyped (Untyped ())
   deriving (Show)
 
 instance Exception ContextBug

@@ -66,41 +66,41 @@ identifier = toText <$> lexeme ((:) <$> startingChar <*> many followingChar)
 
 -- Raw
 
-unit :: Parser Raw
-unit = parens "" $> RUnit
+unit :: Parser (Raw ())
+unit = parens "" $> RUnit ()
 
-pair :: Parser Raw
-pair = parens (RPair <$> token <* dot <*> token)
+pair :: Parser (Raw ())
+pair = parens (RPair <$> token <* dot <*> token <*> pure ())
 
-symbol_ :: Parser Raw
-symbol_ = RSymbol . Symbol <$> identifier
+symbol_ :: Parser (Raw ())
+symbol_ = RSymbol . Symbol <$> identifier <*> pure ()
 
-list :: Parser Raw
+list :: Parser (Raw ())
 list = parens $ do
   ts <- NE.some token
-  pure (foldl' (\r l -> RPair l r) RUnit $ NE.reverse ts)
+  pure (foldl' (\r l -> RPair l r ()) (RUnit ()) $ NE.reverse ts)
 
-tuple :: Parser Raw
+tuple :: Parser (Raw ())
 tuple = brackets $ do
   ts <- many token
-  pure (foldl' (\r l -> RPair l r) RUnit $ reverse ("tuple" : ts))
+  pure (foldl' (\r l -> RPair l r ()) (RUnit ()) $ reverse ("tuple" : ts))
 
-quote :: Parser Raw
+quote :: Parser (Raw ())
 quote = char '\'' *> (q <$> token)
   where
-    q x = (RPair "quote" (RPair x RUnit))
+    q x = (RPair "quote" (RPair x (RUnit ()) ()) ())
 
-backquote :: Parser Raw
+backquote :: Parser (Raw ())
 backquote = char '`' *> (q <$> token)
   where
-    q x = (RPair "backquote" (RPair x RUnit))
+    q x = (RPair "backquote" (RPair x (RUnit ()) ()) ())
 
-unquote :: Parser Raw
+unquote :: Parser (Raw ())
 unquote = char ',' *> (q <$> token)
   where
-    q x = (RPair "unquote" (RPair x RUnit))
+    q x = (RPair "unquote" (RPair x (RUnit ()) ()) ())
 
-token :: Parser Raw
+token :: Parser (Raw ())
 token =
   try unit
     <|> try quote
@@ -111,5 +111,5 @@ token =
     <|> try tuple
     <|> try list
 
-tokens :: Parser [Raw]
+tokens :: Parser [Raw ()]
 tokens = (spaceConsumer <|> mempty) *> many token <* eof
