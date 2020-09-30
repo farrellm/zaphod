@@ -67,38 +67,38 @@ identifier = toText <$> lexeme ((:) <$> startingChar <*> many followingChar)
 -- Raw
 
 unit :: Parser (Raw ())
-unit = parens "" $> RUnit ()
+unit = (:# ()) <$> (parens "" $> RUnit)
 
 pair :: Parser (Raw ())
-pair = parens (RPair <$> token <* dot <*> token <*> pure ())
+pair = (:# ()) <$> parens (RPair <$> token <* dot <*> token)
 
 symbol_ :: Parser (Raw ())
-symbol_ = RSymbol . Symbol <$> identifier <*> pure ()
+symbol_ = (:# ()) <$> RSymbol . Symbol <$> identifier
 
 list :: Parser (Raw ())
 list = parens $ do
   ts <- NE.some token
-  pure (foldl' (\r l -> RPair l r ()) (RUnit ()) $ NE.reverse ts)
+  pure (foldl' (\r l -> RPair l r :# ()) (RUnit :# ()) $ NE.reverse ts)
 
 tuple :: Parser (Raw ())
 tuple = brackets $ do
   ts <- many token
-  pure (foldl' (\r l -> RPair l r ()) (RUnit ()) $ reverse ("tuple" : ts))
+  pure (foldl' (\r l -> RPair l r :# ()) (RUnit :# ()) $ reverse ((RSymbol "tuple" :# ()) : ts))
 
 quote :: Parser (Raw ())
 quote = char '\'' *> (q <$> token)
   where
-    q x = (RPair "quote" (RPair x (RUnit ()) ()) ())
+    q x = (RPair (RSymbol "quote" :# ()) (RPair x (RUnit :# ()) :# ()) :# ())
 
 backquote :: Parser (Raw ())
 backquote = char '`' *> (q <$> token)
   where
-    q x = (RPair "backquote" (RPair x (RUnit ()) ()) ())
+    q x = (RPair (RSymbol "backquote" :# ()) (RPair x (RUnit :# ()) :# ()) :# ())
 
 unquote :: Parser (Raw ())
 unquote = char ',' *> (q <$> token)
   where
-    q x = (RPair "unquote" (RPair x (RUnit ()) ()) ())
+    q x = (RPair (RSymbol "unquote" :# ()) (RPair x (RUnit :# ()) :# ()) :# ())
 
 token :: Parser (Raw ())
 token =

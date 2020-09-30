@@ -12,12 +12,14 @@ class MaybeList a where
   isList :: a -> Bool
   maybeList :: a -> Maybe [a]
 
-class HasLocation a where
-  type Loc a
-  type UnitLoc a
-  location :: a -> Loc a
-  stripLocation :: a -> UnitLoc a
-  setLocation :: Loc a -> UnitLoc a -> a
+class HasLocation f where
+  location :: f a -> a
+
+setLocation :: (Functor f) => b -> f a -> f b
+setLocation b = (const b <$>)
+
+stripLocation :: (Functor f) => f a -> f ()
+stripLocation = setLocation ()
 
 instance Render () where
   render () = "()"

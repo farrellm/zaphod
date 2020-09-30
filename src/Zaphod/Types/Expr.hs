@@ -8,7 +8,7 @@
 
 module Zaphod.Types.Expr where
 
-import Data.Bifunctor.TH (deriveBifunctor)
+import Data.Bifunctor.TH (deriveBifoldable, deriveBifunctor, deriveBitraversable)
 import qualified GHC.Exts (IsList (..))
 import qualified GHC.Show (Show (..))
 import Zaphod.Types.Class
@@ -22,6 +22,32 @@ data TypesBug
 
 instance Exception TypesBug
 
+data Expr' t h
+  = EType ZType
+  | EUnit
+  | ESymbol Symbol t
+  | ELambda Variable h Environment t
+  | ELambda' [Variable] h Environment t
+  | EImplicit Variable h Environment t
+  | EMacro Variable h t
+  | EMacro' [Variable] h t
+  | EApply h [h] t
+  | EPair h h t
+  | EAnnotation h ZType
+  | EQuote h t
+  | ENative1 Native1 t
+  | ENative2 Native2 t
+  | ENativeIO NativeIO t
+  | ESpecial t
+  deriving (Show, Eq, Functor, Foldable, Traversable)
+
+data Expr t l = Expr' t (Expr t l) :@ l
+  deriving (Show, Eq, Functor)
+
+type Untyped = Expr ()
+
+type Typed = Expr ZType
+
 data ZType
   = ZType Int
   | ZUnit
@@ -31,8 +57,8 @@ data ZType
   | ZFunction ZType ZType
   | ZSymbol
   | ZPair ZType ZType
-  | ZValue (Expr () ZType)
-  | ZUntyped (Expr () ())
+  | ZValue (Typed ())
+  | ZUntyped (Untyped ())
   | ZTop
   deriving (Show, Eq)
 
@@ -56,7 +82,7 @@ instance IsList ZType where
   toList _ = bug NotList
 
 stripType :: Typed l -> Untyped l
-stripType = fmap (const ())
+stripType = first (const ())
 
 render' :: Typed l -> Text
 render' = render . stripType
@@ -104,157 +130,119 @@ instance Show NativeIO where
 
 type Environment = Map Symbol (Typed ())
 
-data Expr l t
-  = EType ZType l
-  | EUnit l
-  | ESymbol Symbol t l
-  | ELambda Variable (Expr l t) Environment t l
-  | ELambda' [Variable] (Expr l t) Environment t l
-  | EImplicit Variable (Expr l t) Environment t l
-  | EMacro Variable (Expr l t) t l
-  | EMacro' [Variable] (Expr l t) t l
-  | EApply (Expr l t) [Expr l t] t l
-  | EPair (Expr l t) (Expr l t) t l
-  | EAnnotation (Expr l t) ZType l
-  | EQuote (Expr l t) t l
-  | ENative1 Native1 t l
-  | ENative2 Native2 t l
-  | ENativeIO NativeIO t l
-  | ESpecial t l
-  deriving (Show, Eq, Functor, Foldable, Traversable)
-
-type Untyped l = Expr l ()
-
-type Typed l = Expr l ZType
+deriveBifunctor ''Expr'
+deriveBifoldable ''Expr'
+deriveBitraversable ''Expr'
 
 deriveBifunctor ''Expr
+deriveBifoldable ''Expr
+deriveBitraversable ''Expr
 
-instance HasLocation (Expr l t) where
-  type Loc (Expr l t) = l
-  type UnitLoc (Expr l t) = Expr () t
-
-  location (EType _ l) = l
-  location (EUnit l) = l
-  location (ESymbol _ _ l) = l
-  location (ELambda _ _ _ _ l) = l
-  location (ELambda' _ _ _ _ l) = l
-  location (EImplicit _ _ _ _ l) = l
-  location (EMacro _ _ _ l) = l
-  location (EMacro' _ _ _ l) = l
-  location (EApply _ _ _ l) = l
-  location (EPair _ _ _ l) = l
-  location (EAnnotation _ _ l) = l
-  location (EQuote _ _ l) = l
-  location (ENative1 _ _ l) = l
-  location (ENative2 _ _ l) = l
-  location (ENativeIO _ _ l) = l
-  location (ESpecial _ l) = l
-
-  stripLocation = first (const ())
-  setLocation l = first (const l)
+instance HasLocation (Expr t) where
+  location (_ :@ l) = l
 
 instance MaybeList (Expr l t) where
-  isList (EUnit _) = True
-  isList (EPair _ r _ _) = isList r
+  isList (EUnit :@ _) = True
+  isList (EPair _ r _ :@ _) = isList r
   isList _ = False
 
-  maybeList (EUnit _) = Just []
-  maybeList (EPair l r _ _) = (l :) <$> maybeList r
+  maybeList (EUnit :@ _) = Just []
+  maybeList (EPair l r _ :@ _) = (l :) <$> maybeList r
   maybeList _ = Nothing
 
 instance (Monoid l) => IsString (Untyped l) where
-  fromString s = ESymbol (fromString s) () mempty
+  fromString s = ESymbol (fromString s) () :@ mempty
 
 instance (Monoid l) => IsList (Untyped l) where
   type Item (Untyped l) = Untyped l
 
-  fromList [] = EUnit mempty
+  fromList [] = EUnit :@ mempty
   fromList (x : xs) =
     let xs' = fromList xs
-     in EPair x xs' () (location x <> location xs')
+     in EPair x xs' () :@ (location x <> location xs')
 
-  toList (EUnit _) = []
-  toList (EPair l r _ _) = l : GHC.Exts.toList r
+  toList (EUnit :@ _) = []
+  toList (EPair l r _ :@ _) = l : GHC.Exts.toList r
   toList _ = bug NotList
 
 instance (Monoid l) => IsList (Typed l) where
   type Item (Typed l) = Typed l
 
-  fromList [] = EUnit mempty
+  fromList [] = EUnit :@ mempty
   fromList (x : xs) =
     let xs' = fromList xs
-     in EPair x xs' (ZPair (exprType x) (exprType xs')) (location x <> location xs')
+     in EPair x xs' (ZPair (exprType x) (exprType xs')) :@ (location x <> location xs')
 
-  toList (EUnit _) = []
-  toList (EPair l r _ _) = l : GHC.Exts.toList r
+  toList (EUnit :@ _) = []
+  toList (EPair l r _ :@ _) = l : GHC.Exts.toList r
   toList _ = bug NotList
 
 exprType :: Typed l -> ZType
-exprType (EType (ZType n) _) = ZType (n + 1)
-exprType (EType _ _) = ZType 0
-exprType (EUnit _) = ZUnit
-exprType (ELambda _ _ _ t _) = t
-exprType (ELambda' _ _ _ t _) = t
-exprType (EImplicit _ _ _ t _) = t
-exprType (EMacro _ _ t _) = t
-exprType (EMacro' _ _ t _) = t
-exprType (EAnnotation _ t _) = t
-exprType (ESymbol _ t _) = t
-exprType (EPair _ _ t _) = t
-exprType (EApply _ _ t _) = t
-exprType (EQuote _ t _) = t
-exprType (ENative1 _ t _) = t
-exprType (ENative2 _ t _) = t
-exprType (ENativeIO _ t _) = t
-exprType (ESpecial t _) = t
+exprType (EType (ZType n) :@ _) = ZType (n + 1)
+exprType (EType _ :@ _) = ZType 0
+exprType (EUnit :@ _) = ZUnit
+exprType (ELambda _ _ _ t :@ _) = t
+exprType (ELambda' _ _ _ t :@ _) = t
+exprType (EImplicit _ _ _ t :@ _) = t
+exprType (EMacro _ _ t :@ _) = t
+exprType (EMacro' _ _ t :@ _) = t
+exprType (EAnnotation _ t :@ _) = t
+exprType (ESymbol _ t :@ _) = t
+exprType (EPair _ _ t :@ _) = t
+exprType (EApply _ _ t :@ _) = t
+exprType (EQuote _ t :@ _) = t
+exprType (ENative1 _ t :@ _) = t
+exprType (ENative2 _ t :@ _) = t
+exprType (ENativeIO _ t :@ _) = t
+exprType (ESpecial t :@ _) = t
 
 instance Render (Untyped l) where
-  render (EType z _) = "[" <> render z <> "]"
-  render (EUnit _) = "()"
-  render (ESymbol t () _) = render t
-  render (ELambda _ _ _ () _) = "<lambda>"
-  render (ELambda' _ _ _ () _) = "<lambda>"
-  render (EImplicit x e _ () _) = "(implicit " <> render x <> " " <> render e <> ")"
-  render (EMacro x e () _) = "(macro " <> render x <> " " <> render e <> ")"
-  render (EMacro' xs e () _) = "(macro " <> render xs <> " " <> render e <> ")"
-  render p@(EPair l r () _) =
+  render (EType z :@ _) = "[" <> render z <> "]"
+  render (EUnit :@ _) = "()"
+  render (ESymbol t () :@ _) = render t
+  render (ELambda _ _ _ () :@ _) = "<lambda>"
+  render (ELambda' _ _ _ () :@ _) = "<lambda>"
+  render (EImplicit x e _ () :@ _) = "(implicit " <> render x <> " " <> render e <> ")"
+  render (EMacro x e () :@ _) = "(macro " <> render x <> " " <> render e <> ")"
+  render (EMacro' xs e () :@ _) = "(macro " <> render xs <> " " <> render e <> ")"
+  render p@(EPair l r () :@ _) =
     case maybeList p of
       Just xs -> render xs
       Nothing -> render (l, r)
-  render (EAnnotation e z _) = "(" <> render e <> " : " <> render z <> ")"
-  render (EApply f xs () _) = render (f : xs)
-  render (EQuote t () _) = "'" <> render t
-  render (ENative1 _ () _) = "<native1>"
-  render (ENative2 _ () _) = "<native2>"
-  render (ENativeIO _ () _) = "<nativeIO>"
-  render (ESpecial () _) = "<special>"
+  render (EAnnotation e z :@ _) = "(" <> render e <> " : " <> render z <> ")"
+  render (EApply f xs () :@ _) = render (f : xs)
+  render (EQuote t () :@ _) = "'" <> render t
+  render (ENative1 _ () :@ _) = "<native1>"
+  render (ENative2 _ () :@ _) = "<native2>"
+  render (ENativeIO _ () :@ _) = "<nativeIO>"
+  render (ESpecial () :@ _) = "<special>"
 
 instance Render (Typed l) where
-  render (EType (ZValue e) _) = "[{" <> render' e <> "}] : Type"
-  render (EType z _) = "[" <> render z <> "] : Type"
-  render (EUnit _) = "() : ()"
-  render (ESymbol t z _) = render t <> " : " <> render z
-  render (ELambda _ _ _ z _) = "<lambda> : " <> render z
-  render (ELambda' _ _ _ z _) = "<lambda> : " <> render z
-  render (EImplicit x e _ z _) = "(implicit " <> render x <> " " <> render e <> ") : " <> render z
-  render (EMacro x e z _) = "(macro " <> render x <> " " <> render e <> ") : " <> render z
-  render (EMacro' xs e z _) = "(macro " <> render xs <> " " <> render e <> ") : " <> render z
-  render p@(EPair l r z _) =
+  render (EType (ZValue e) :@ _) = "[{" <> render' e <> "}] : Type"
+  render (EType z :@ _) = "[" <> render z <> "] : Type"
+  render (EUnit :@ _) = "() : ()"
+  render (ESymbol t z :@ _) = render t <> " : " <> render z
+  render (ELambda _ _ _ z :@ _) = "<lambda> : " <> render z
+  render (ELambda' _ _ _ z :@ _) = "<lambda> : " <> render z
+  render (EImplicit x e _ z :@ _) = "(implicit " <> render x <> " " <> render e <> ") : " <> render z
+  render (EMacro x e z :@ _) = "(macro " <> render x <> " " <> render e <> ") : " <> render z
+  render (EMacro' xs e z :@ _) = "(macro " <> render xs <> " " <> render e <> ") : " <> render z
+  render p@(EPair l r z :@ _) =
     case maybeList $ stripType p of
       Just xs -> render xs <> " : " <> render z
       Nothing -> render (stripType l, stripType r) <> " : " <> render z
-  render (EAnnotation e z _) = "(" <> render' e <> " : " <> render z <> ")"
-  render (EApply f xs z _) = render (stripType <$> f : xs) <> " : " <> render z
-  render (EQuote x z _) = "'" <> render' x <> " : " <> render z
-  render (ENative1 _ z _) = "<native1> : " <> render z
-  render (ENative2 _ z _) = "<native2> : " <> render z
-  render (ENativeIO _ z _) = "<nativeIO> : " <> render z
-  render (ESpecial z _) = "<special> : " <> render z
+  render (EAnnotation e z :@ _) = "(" <> render' e <> " : " <> render z <> ")"
+  render (EApply f xs z :@ _) = render (stripType <$> f : xs) <> " : " <> render z
+  render (EQuote x z :@ _) = "'" <> render' x <> " : " <> render z
+  render (ENative1 _ z :@ _) = "<native1> : " <> render z
+  render (ENative2 _ z :@ _) = "<native2> : " <> render z
+  render (ENativeIO _ z :@ _) = "<nativeIO> : " <> render z
+  render (ESpecial z :@ _) = "<special> : " <> render z
 
 unwrapType :: Typed l -> ZType
-unwrapType (EType z _) = z
+unwrapType (EType z :@ _) = z
 unwrapType e = ZValue $ stripLocation e
 
 unwrapType' :: Untyped l -> ZType
-unwrapType' (EType z _) = z
+unwrapType' (EType z :@ _) = z
 unwrapType' e = ZUntyped $ stripLocation e
