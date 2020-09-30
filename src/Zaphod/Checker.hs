@@ -71,7 +71,7 @@ withUniversal alpha x = do
 
 applyCtxType :: (MonadState CheckerState m) => ZType -> m ZType
 applyCtxType z@(ZType _) = pure z
-applyCtxType ZTop = pure ZTop
+applyCtxType ZAny = pure ZAny
 applyCtxType z@(ZUniversal _) = pure z
 applyCtxType ZUnit = pure ZUnit
 applyCtxType ZSymbol = pure ZSymbol
@@ -93,7 +93,7 @@ applyCtxExpr e = bitraverse applyCtxType pure e
 
 notInFV :: Existential -> ZType -> Bool
 notInFV _ (ZType _) = True
-notInFV _ ZTop = True
+notInFV _ ZAny = True
 notInFV _ ZUnit = True
 notInFV _ (ZUniversal _) = True
 notInFV a (ZExistential b) = a /= b
@@ -105,7 +105,7 @@ notInFV a (ZValue x) = notInFV a (exprType x)
 notInFV _ (ZUntyped x) = bug (UnexpectedUntyped x)
 
 isMonoType :: ZType -> Bool
-isMonoType ZTop = True
+isMonoType ZAny = True
 isMonoType ZUnit = True
 isMonoType ZSymbol = True
 isMonoType (ZUniversal _) = True
@@ -180,8 +180,8 @@ logInfo m x = do
     mkIndent = flip T.replicate "| " <$> use depth
 
 subtype' :: (MonadState CheckerState m) => ZType -> ZType -> m ()
--- <:Top
-subtype' _ ZTop = pass
+-- <:Any
+subtype' _ ZAny = pass
 -- <:Var
 subtype' (ZUniversal alpha) (ZUniversal beta) | alpha == beta = pass
 -- <:Unit

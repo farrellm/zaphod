@@ -23,19 +23,19 @@
   x)
 
 (defn (top-append xs ys)
-  (forall (a b) (-> [a b] Top))
-  (top-foldr (lambda (x a) (: (cons x a) Top))
+  (forall (a b) (-> [a b] Any))
+  (top-foldr (lambda (x a) (: (cons x a) Any))
              ys
              xs))
 
 (defn (top-reverse' xs ys)
-  (forall (a b) (-> [a b] Top))
+  (forall (a b) (-> [a b] Any))
   (if (is-nil xs)
-      (: ys Top)
+      (: ys Any)
       (top-reverse' (cdr xs) (cons (car xs) ys))))
 
 (defn (top-reverse xs)
-  (forall (a) (-> [a] Top))
+  (forall (a) (-> [a] Any))
   (top-reverse' xs ()))
 
 (defn (not p)

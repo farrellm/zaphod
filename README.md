@@ -3,7 +3,7 @@ A two headed language
 
 How is Zaphod a two headed language?  In several ways:
 - Zaphod is like Scheme with Haskell's type system[[1]](#1) bolted on
-- Zaphod's type system includes an explicit `Top` type, so "untyped"
+- Zaphod's type system includes an explicit `Any` type, so "untyped"
   functions and macros are possible
 - [todo] Zaphod supports an alternative syntax that looks much more
   like Python
@@ -51,7 +51,7 @@ syntax.
 ```scheme
 ()      ;; the unit type
 Symbol  ;; the type for symbols
-Top     ;; universal return type
+Any     ;; universal return type
 (x . y) ;; pair type
 
 ;; tuple types, the following two are equivalent
@@ -88,7 +88,7 @@ Top     ;; universal return type
 ### Macros
 ```scheme
 (def defn
-     (-> [(Symbol . Top) Type Top] Top)
+     (-> [(Symbol . Any) Type Any] Any)
      (macro (p t e)
        ['def (car p) t ['lambda (cdr p) e]]))
 ```
