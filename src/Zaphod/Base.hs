@@ -61,7 +61,7 @@ baseEnvironment :: Environment
 baseEnvironment =
   M.fromList
     [ -- Native values
-      ("Top", EType ZTop :@ ()),
+      ("Any", EType ZAny :@ ()),
       ("Symbol", EType ZSymbol :@ ()),
       ("Type", EType (ZType 0) :@ ()),
       -- Native functions
@@ -75,7 +75,7 @@ baseEnvironment =
       ("is-symbol", ENative1 (Native1 isSymbol) zPred :@ ()),
       ("is-pair", ENative1 (Native1 isPair) zPred :@ ()),
       ("symbol-eq", ENative2 (Native2 stripEq) zSymbolEq :@ ()),
-      ("top-eq", ENative2 (Native2 stripEq) zTopEq :@ ()),
+      ("top-eq", ENative2 (Native2 stripEq) zAnyEq :@ ()),
       ( "unsafe-gensym",
         ENativeIO (NativeIO ((:@ ()) <$> (ESymbol <$> gensym <*> pure ZSymbol))) zUnsafeGensym :@ ()
       ),
@@ -97,7 +97,7 @@ baseEnvironment =
     --
     zPred = ZForall a (ZFunction (zTuple1 za) zBool)
     zSymbolEq = ZFunction (zTuple2 ZSymbol ZSymbol) zBool
-    zTopEq = ZForall a . ZForall b $ ZFunction (zTuple2 za zb) zBool
+    zAnyEq = ZForall a . ZForall b $ ZFunction (zTuple2 za zb) zBool
     isNil (EUnit :@ _) = zTrue
     isNil _ = zFalse
     isSymbol (ESymbol _ _ :@ _) = zTrue

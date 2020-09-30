@@ -59,7 +59,7 @@ data ZType
   | ZPair ZType ZType
   | ZValue (Typed ())
   | ZUntyped (Untyped ())
-  | ZTop
+  | ZAny
   deriving (Show, Eq)
 
 instance MaybeList ZType where
@@ -101,7 +101,7 @@ instance Render ZType where
       Nothing -> render (l, r)
   render (ZValue x) = "{" <> render' x <> "}"
   render (ZUntyped x) = "{" <> render x <> "}"
-  render ZTop = "Top"
+  render ZAny = "Any"
 
 newtype Native1 = Native1 (Typed () -> Typed ())
 
