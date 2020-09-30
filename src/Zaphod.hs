@@ -37,8 +37,7 @@ emptyZState =
 evalText :: Text -> StateT ZState IO ()
 evalText t =
   case parse tokens "<cmd>" t of
-    Left e -> do
-      putStrLn (errorBundlePretty e)
+    Left e -> putStrLn (errorBundlePretty e)
     Right rs -> do
       rs' <- traverse evaluateTopLevel rs
       traverse_ (putTextLn . render) rs'
@@ -55,7 +54,7 @@ repl _ = do
       case minput of
         Nothing -> pure z
         Just ":quit" -> pure z
-        Just input -> do
+        Just input ->
           case parse tokens "<repl>" (toText input) of
             Left e -> do
               putStrLn (errorBundlePretty e)

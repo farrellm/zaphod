@@ -7,6 +7,7 @@ module Prelude
 where
 
 import Relude as X
+import Relude.Extra.Bifunctor as X (bimapF)
 
 debug :: Bool
 debug = False

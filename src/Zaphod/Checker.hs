@@ -257,8 +257,8 @@ instantiateL' alphaHat x = do
       alphaHat1 `instantiateL` a1
       alphaHat2 `instantiateL` a2
     -- InstLAllR
-    go _ (ZForall beta b) = do
-      withUniversal beta $ do
+    go _ (ZForall beta b) =
+      withUniversal beta $
         alphaHat `instantiateL` b
     --
     go _ tau = bug $ NotMonotype tau
@@ -275,7 +275,7 @@ instantiateR' x alphaHat = do
     -- InstRSolve
     go True tau = context %= solveExistential tau alphaHat
     -- InstRReach
-    go _ (ZExistential betaHat) = do
+    go _ (ZExistential betaHat) =
       context %= solveExistential (ZExistential alphaHat) betaHat
     -- InstRArr
     go _ (ZFunction a1 a2) = do
@@ -304,10 +304,10 @@ instantiateR' x alphaHat = do
       (`instantiateR` alphaHat1) =<< applyCtxType a1
       (`instantiateR` alphaHat2) =<< applyCtxType a2
     -- InstRAllL
-    go _ (ZForall beta b) = do
-      markExtential $ \betaHat -> do
+    go _ (ZForall beta b) =
+      markExtential $ \betaHat ->
         let b' = (ZExistential betaHat `substitute` ZUniversal beta) b
-        b' `instantiateR` alphaHat
+         in b' `instantiateR` alphaHat
     --
     go _ tau = bug $ NotMonotype tau
 
@@ -358,7 +358,7 @@ checkFunction x e a b = do
 
 checkFunction' ::
   (Monoid l, MonadState CheckerState m) => [Variable] -> Untyped l -> ZType -> ZType -> m (Typed l)
-checkFunction' xs e a b = do
+checkFunction' xs e a b =
   case maybeList a of
     Just ts | length xs == length ts -> do
       for_ (zip xs ts) $ \(x, t) -> context %= (CVariable x t <:)
@@ -438,7 +438,7 @@ synthesize' (EType m :@ l) = (:@ l) . EType <$> synthesizeType m
     synthesizeType z = pure z
 -- Quote
 synthesize' (EQuote x () :@ lq) =
-  let z = (synthesizeQuoted x)
+  let z = synthesizeQuoted x
    in pure (EQuote z (exprType z) :@ lq)
   where
     synthesizeQuoted :: Untyped l -> Typed l

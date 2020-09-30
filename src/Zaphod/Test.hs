@@ -11,7 +11,7 @@ import Zaphod.Parser (token)
 import Zaphod.Types
 
 test :: IO ()
-test = do
+test =
   evaluatingStateT emptyZState $ do
     runFile "base.zfd"
     print' (parseTest unit)

@@ -41,7 +41,7 @@ wind e (Context cs) =
     go (d : ds) rs = go ds (d : rs)
 
 unwind :: Hole -> Context -> Context
-unwind (Hole e rs) (Context es) = Context (foldl' (flip (:)) (CUnsolved e : es) rs)
+unwind (Hole e rs) (Context es) = Context (flipfoldl' (:) (CUnsolved e : es) rs)
 
 lookupType :: Existential -> Context -> LookupResult
 lookupType t (Context es) = go es
