@@ -73,7 +73,7 @@ pair :: Parser (Raw ())
 pair = (:# ()) <$> parens (RPair <$> token <* dot <*> token)
 
 symbol_ :: Parser (Raw ())
-symbol_ = (:# ()) <$> RSymbol . Symbol <$> identifier
+symbol_ = (:# ()) . RSymbol . Symbol <$> identifier
 
 list :: Parser (Raw ())
 list = parens $ do
@@ -88,17 +88,17 @@ tuple = brackets $ do
 quote :: Parser (Raw ())
 quote = char '\'' *> (q <$> token)
   where
-    q x = (RPair (RSymbol "quote" :# ()) (RPair x (RUnit :# ()) :# ()) :# ())
+    q x = RPair (RSymbol "quote" :# ()) (RPair x (RUnit :# ()) :# ()) :# ()
 
 backquote :: Parser (Raw ())
 backquote = char '`' *> (q <$> token)
   where
-    q x = (RPair (RSymbol "backquote" :# ()) (RPair x (RUnit :# ()) :# ()) :# ())
+    q x = RPair (RSymbol "backquote" :# ()) (RPair x (RUnit :# ()) :# ()) :# ()
 
 unquote :: Parser (Raw ())
 unquote = char ',' *> (q <$> token)
   where
-    q x = (RPair (RSymbol "unquote" :# ()) (RPair x (RUnit :# ()) :# ()) :# ())
+    q x = RPair (RSymbol "unquote" :# ()) (RPair x (RUnit :# ()) :# ()) :# ()
 
 token :: Parser (Raw ())
 token =

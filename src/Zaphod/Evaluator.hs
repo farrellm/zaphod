@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
@@ -70,7 +71,7 @@ evaluate x = do
       Typed l ->
       ReaderT (Map Symbol (Typed ()), Map Symbol (Typed ())) m (Typed ())
     eval (ESymbol s _ :@ _) = do
-      (m, n) <- bimap (!? s) (!? s) <$> ask
+      (m, n) <- bimapF (!? s) (!? s) ask
       pure $ case (m, n) of
         (Just v, _) -> v
         (_, Just v) -> v
@@ -88,13 +89,13 @@ evaluate x = do
       f' <- eval f
       xs' <- eval xs
       setType r <$> case (f', maybeList xs') of
-        (ELambda (Variable v) e env _ :@ _, _) -> do
+        (ELambda (Variable v) e env _ :@ _, _) ->
           local (\(_, n) -> (M.insert v xs' env, n)) $ eval e
-        (EImplicit (Variable v) e env _ :@ _, _) -> do
+        (EImplicit (Variable v) e env _ :@ _, _) ->
           local (\(_, n) -> (M.insert v xs' env, n)) $ eval e
-        (ELambda' vs e env _ :@ _, Just ys) -> do
+        (ELambda' vs e env _ :@ _, Just ys) ->
           let vxs = zip vs ys
-          local (\(_, n) -> (foldl' extend env vxs, n)) $ eval e
+           in local (\(_, n) -> (foldl' extend env vxs, n)) $ eval e
         (ENative1 (Native1 g) _ :@ _, Just [a]) ->
           pure $ g a
         (ENative2 (Native2 g) _ :@ _, Just [a, b]) ->
@@ -112,8 +113,8 @@ evaluate x = do
             local (\(_, n) -> (foldl' extend env vxs, n)) $ eval e
           | otherwise -> bug (ArgumentCount (length vs) (length xs))
         EImplicit (Variable v) e env (ZFunction i _) :@ _ -> do
-          (a, b) <- bimap (findOfType i) (findOfType i) <$> ask
-          case (M.toList a ++ M.toList b) of
+          (a, b) <- bimapF (findOfType i) (findOfType i) ask
+          case M.toList a ++ M.toList b of
             [(_, s)] -> local (\(_, n) -> (M.insert v s env, n)) $ eval e
             [] -> bug $ NoMatches i
             ss -> bug $ MultipleMatches i (snd <$> ss)
@@ -151,7 +152,7 @@ evaluate x = do
 
 evaluateType ::
   (Monoid l, MonadReader Environment m, MonadIO m) =>
-  (Untyped l) ->
+  Untyped l ->
   m ZType
 evaluateType u = do
   env <- ask
@@ -202,7 +203,7 @@ analyzeUntyped (RS "lambda" `RPair` (xs :. e :. RU) :# l) =
   case mkParams xs of
     Just ps -> (:@ l) <$> (ELambda' ps <$> analyzeUntyped e <*> pure mempty <*> pure ())
     Nothing -> bug (InvalidParameters $ stripLocation xs)
-analyzeUntyped ((RS "implicit") `RPair` (RS x :. e :. RU) :# l) =
+analyzeUntyped (RS "implicit" `RPair` (RS x :. e :. RU) :# l) =
   (:@ l) <$> (EImplicit (Variable x) <$> analyzeUntyped e <*> pure mempty <*> pure ())
 analyzeUntyped (RS "macro" `RPair` (RS x :. e :. RU) :# l) =
   (:@ l) <$> (EMacro (Variable x) <$> analyzeUntyped e <*> pure ())
@@ -231,29 +232,22 @@ evaluateRaw m x = do
   x' <-
     usingReaderT env
       . evaluatingStateT (emptyCheckerState env)
-      $ do
-        case m of
-          Just (n, (RSymbol "Type" :# _)) -> do
-            context %= (CVariable (Variable n) (ZType 0) <:)
-            (:@ ()) . EType <$> evaluateRawType x
-          Just (n, t) -> do
-            t' <- evaluateRawType t
-            context %= (CVariable (Variable n) t' <:)
-            let x' =
-                  ( RPair
-                      (RSymbol ":" :# mempty)
-                      (RPair x (RPair t (RUnit :# mempty) :# mempty) :# mempty)
-                      :# mempty
-                  )
-            evaluate =<< synthesize =<< analyzeUntyped x'
-          Nothing -> evaluate =<< synthesize =<< analyzeUntyped x
+      $ case m of
+        Just (n, RSymbol "Type" :# _) -> do
+          context %= (CVariable (Variable n) (ZType 0) <:)
+          (:@ ()) . EType <$> evaluateRawType x
+        Just (n, t) -> do
+          t' <- evaluateRawType t
+          context %= (CVariable (Variable n) t' <:)
+          evaluate =<< synthesize =<< analyzeUntyped [":", x, t]
+        Nothing -> evaluate =<< synthesize =<< analyzeUntyped x
   pure (first universalize x')
   where
     universalize z =
       let es = unbound z
           us = universals z
           eus = mkEUMap (toList es) us ['a' ..]
-       in foldl' (flip ZForall) (replaceExt eus z) eus
+       in flipfoldl' ZForall (replaceExt eus z) eus
 
     unbound (ZExistential e) = one e
     unbound (ZForall _ z) = unbound z
@@ -305,16 +299,8 @@ macroExpand1 w = do
         Just xs -> do
           f <- M.lookup s <$> ask
           case f of
-            Just (EMacro v e _ :@ ()) -> do
-              let f' = setLocation mempty $ ELambda v (stripType e) mempty () :@ ()
-              xs' <- traverse (analyzeUntyped . quote) xs
-              x' <- evaluate =<< synthesize (EApply f' xs' () :@ lq)
-              checkResult x' xs
-            Just (EMacro' vs e _ :@ ()) -> do
-              let f' = setLocation mempty $ ELambda' vs (stripType e) mempty () :@ ()
-              xs' <- traverse (analyzeUntyped . quote) xs
-              x' <- evaluate =<< synthesize (EApply f' xs' () :@ lq)
-              checkResult x' xs
+            Just (EMacro v e _ :@ ()) -> goMacro xs $ ELambda v (stripType e) mempty () :@ ()
+            Just (EMacro' vs e _ :@ ()) -> goMacro xs $ ELambda' vs (stripType e) mempty () :@ ()
             _ -> goList xs
         Nothing -> (:# lq) . RPair a <$> go b
       where
@@ -325,6 +311,12 @@ macroExpand1 w = do
           if r /= q'
             then pure $ setLocation lq r
             else goList xs
+
+        goMacro xs l = do
+          let f' = setLocation mempty l
+          xs' <- traverse (analyzeUntyped . quote) xs
+          x' <- evaluate =<< synthesize (EApply f' xs' () :@ lq)
+          checkResult x' xs
 
         goList xs = fromList . (a :) <$> traverse go xs
     go (RPair x y :# l) = (:# l) <$> (RPair <$> go x <*> go y)
@@ -361,8 +353,7 @@ evaluateTopLevel' (RPair (RSymbol "begin" :# _) r :# _) =
         pure $ last xs
       Nothing -> bug $ BadBegin (stripLocation r)
     Nothing -> bug $ BadBegin (stripLocation r)
-evaluateTopLevel' e = do
-  evaluateRaw Nothing e
+evaluateTopLevel' e = evaluateRaw Nothing e
 
 evaluateTopLevel :: (Monoid l, MonadState ZState m, MonadIO m) => Raw l -> m (Typed ())
 evaluateTopLevel r = do

@@ -8,7 +8,7 @@ newtype Symbol = Symbol {getSymbol :: Text}
   deriving (Show, Eq, Ord, IsString)
 
 instance Render Symbol where
-  render k = getSymbol k
+  render = getSymbol
   {-# INLINE render #-}
 
 newtype Universal = Universal {getUniversal :: Symbol}

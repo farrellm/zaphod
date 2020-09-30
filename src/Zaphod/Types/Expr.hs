@@ -74,8 +74,7 @@ instance MaybeList ZType where
 instance IsList ZType where
   type Item ZType = ZType
 
-  fromList [] = ZUnit
-  fromList (x : xs) = ZPair x (fromList xs)
+  fromList = foldr ZPair ZUnit
 
   toList ZUnit = []
   toList (ZPair l r) = l : GHC.Exts.toList r
