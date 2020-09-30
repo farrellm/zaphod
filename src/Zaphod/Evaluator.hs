@@ -162,25 +162,20 @@ analyzeType ::
   (Monoid l, MonadReader Environment m, MonadIO m) =>
   Raw l ->
   m ZType
-analyzeType (RUnit :# _) = pure ZUnit
-analyzeType x@(RSymbol _ :# _) = ZUntyped . stripLocation <$> analyzeUntyped x
-analyzeType
-  ( RPair
-      (RSymbol "forall" :# _)
-      (RPair (RSymbol u :# _) (RPair z (RUnit :# _) :# _) :# _)
-      :# _
-    ) = ZForall (Universal u) <$> analyzeType z
-analyzeType (RPair (RSymbol "->" :# _) (RPair a (RPair b (RUnit :# _) :# _) :# _) :# _) =
-  ZFunction <$> analyzeType a <*> analyzeType b
-analyzeType (RPair (RSymbol "quote" :# _) (RPair x (RUnit :# _) :# _) :# _) =
+analyzeType RU = pure ZUnit
+analyzeType x@(RS _) = ZUntyped . stripLocation <$> analyzeUntyped x
+analyzeType (RS "forall" :. RS u :. z :. RU) = ZForall (Universal u) <$> analyzeType z
+analyzeType (RS "->" :. a :. b :. RU) = ZFunction <$> analyzeType a <*> analyzeType b
+analyzeType (RS "quote" :. x :. RU) =
   pure . ZUntyped $ EQuote (EType (quoteType x) :@ ()) () :@ ()
   where
     quoteType :: Raw l -> ZType
-    quoteType (RUnit :# _) = ZUnit
-    quoteType (RPair l r :# _) = ZPair (quoteType l) (quoteType r)
-    quoteType (RSymbol s :# _) = ZValue $ ESymbol s ZSymbol :@ ()
-analyzeType (RPair (RSymbol "cons" :# lc) ts :# lp) = analyzeType (RPair (RSymbol "zcons" :# lc) ts :# lp)
-analyzeType (RPair a b :# _) =
+    quoteType RU = ZUnit
+    quoteType (l :. r) = ZPair (quoteType l) (quoteType r)
+    quoteType (RS s) = ZValue $ ESymbol s ZSymbol :@ ()
+analyzeType (RPair (RSymbol "cons" :# lc) ts :# lp) =
+  analyzeType (RPair (RSymbol "zcons" :# lc) ts :# lp)
+analyzeType (a :. b) =
   case maybeList b of
     Just xs -> do
       xs' <- traverse (fmap (\z -> EType z :@ ()) . analyzeType) xs
@@ -194,39 +189,32 @@ analyzeQuoted (RSymbol s :# l) = ESymbol s () :@ l
 analyzeQuoted (RPair x y :# l) = EPair (analyzeQuoted x) (analyzeQuoted y) () :@ l
 
 mkParams :: Raw l -> Maybe [Variable]
-mkParams (RUnit :# _) = Just []
-mkParams (RPair (RSymbol z :# _) zs :# _) = (Variable z :) <$> mkParams zs
+mkParams RU = Just []
+mkParams (RS z :. zs) = (Variable z :) <$> mkParams zs
 mkParams _ = Nothing
 
-analyzeUntyped ::
-  (Monoid l, MonadReader Environment m, MonadIO m) =>
-  Raw l ->
-  m (Untyped l)
+analyzeUntyped :: (Monoid l, MonadReader Environment m, MonadIO m) => Raw l -> m (Untyped l)
 analyzeUntyped (RUnit :# l) = pure (EUnit :@ l)
 analyzeUntyped (RSymbol s :# l) = pure $ ESymbol s () :@ l
-analyzeUntyped
-  (RPair (RSymbol "lambda" :# _) (RPair (RSymbol x :# _) (RPair e (RUnit :# _) :# _) :# _) :# l) =
-    (:@ l) <$> (ELambda (Variable x) <$> analyzeUntyped e <*> pure mempty <*> pure ())
-analyzeUntyped (RPair (RSymbol "lambda" :# _) (RPair xs (RPair e (RUnit :# _) :# _) :# _) :# l) =
+analyzeUntyped (RS "lambda" `RPair` (RS x :. e :. RU) :# l) =
+  (:@ l) <$> (ELambda (Variable x) <$> analyzeUntyped e <*> pure mempty <*> pure ())
+analyzeUntyped (RS "lambda" `RPair` (xs :. e :. RU) :# l) =
   case mkParams xs of
     Just ps -> (:@ l) <$> (ELambda' ps <$> analyzeUntyped e <*> pure mempty <*> pure ())
     Nothing -> bug (InvalidParameters $ stripLocation xs)
-analyzeUntyped
-  (RPair (RSymbol "implicit" :# _) (RPair (RSymbol x :# _) (RPair e (RUnit :# _) :# _) :# _) :# l) =
-    (:@ l) <$> (EImplicit (Variable x) <$> analyzeUntyped e <*> pure mempty <*> pure ())
-analyzeUntyped
-  (RPair (RSymbol "macro" :# _) (RPair (RSymbol x :# _) (RPair e (RUnit :# _) :# _) :# _) :# l) =
-    (:@ l) <$> (EMacro (Variable x) <$> analyzeUntyped e <*> pure ())
-analyzeUntyped (RPair (RSymbol "macro" :# _) (RPair xs (RPair e (RUnit :# _) :# _) :# _) :# l) =
+analyzeUntyped ((RS "implicit") `RPair` (RS x :. e :. RU) :# l) =
+  (:@ l) <$> (EImplicit (Variable x) <$> analyzeUntyped e <*> pure mempty <*> pure ())
+analyzeUntyped (RS "macro" `RPair` (RS x :. e :. RU) :# l) =
+  (:@ l) <$> (EMacro (Variable x) <$> analyzeUntyped e <*> pure ())
+analyzeUntyped (RS "macro" `RPair` (xs :. e :. RU) :# l) =
   case mkParams xs of
     Just ps -> (:@ l) <$> (EMacro' ps <$> analyzeUntyped e <*> pure ())
     Nothing -> bug (InvalidParameters $ stripLocation xs)
-analyzeUntyped
-  (RPair (RSymbol ":" :# _) (RPair t (RPair (RSymbol "Type" :# _) (RUnit :# _) :# _) :# _) :# l) =
-    (:@ l) . EType <$> analyzeType t
-analyzeUntyped (RPair (RSymbol ":" :# _) (RPair e (RPair t (RUnit :# _) :# _) :# _) :# l) =
+analyzeUntyped (RS ":" `RPair` (t :. RS "Type" :. RU) :# l) =
+  (:@ l) . EType <$> analyzeType t
+analyzeUntyped (RS ":" `RPair` (e :. t :. RU) :# l) =
   (:@ l) <$> (EAnnotation <$> analyzeUntyped e <*> evaluateRawType t)
-analyzeUntyped (RPair (RSymbol "quote" :# _) (RPair x (RUnit :# _) :# _) :# l) =
+analyzeUntyped (RS "quote" `RPair` (x :. RU) :# l) =
   pure $ EQuote (analyzeQuoted x) () :@ l
 analyzeUntyped r@(RPair a b :# l) =
   case maybeList b of
@@ -357,26 +345,14 @@ macroExpand w = do
     else macroExpand w'
 
 evaluateTopLevel' :: (Monoid l, MonadState ZState m, MonadIO m) => Raw l -> m (Typed ())
-evaluateTopLevel'
-  (RPair (RSymbol "def" :# _) (RPair (RSymbol s :# _) (RPair e (RUnit :# _) :# _) :# _) :# _) = do
-    e' <- evaluateRaw Nothing e
-    environment %= M.insert s e'
-    pure (EUnit :@ ())
-evaluateTopLevel'
-  ( RPair
-      (RSymbol "def" :# _)
-      ( RPair
-          ( RSymbol s
-              :# _
-            )
-          (RPair t (RPair e (RUnit :# _) :# _) :# _)
-          :# _
-        )
-      :# _
-    ) = do
-    e' <- evaluateRaw (Just (s, t)) e
-    environment %= M.insert s e'
-    pure (EUnit :@ ())
+evaluateTopLevel' (RS "def" :. RS s :. e :. RU) = do
+  e' <- evaluateRaw Nothing e
+  environment %= M.insert s e'
+  pure (EUnit :@ ())
+evaluateTopLevel' (RS "def" :. RS s :. t :. e :. RU) = do
+  e' <- evaluateRaw (Just (s, t)) e
+  environment %= M.insert s e'
+  pure (EUnit :@ ())
 evaluateTopLevel' (RPair (RSymbol "begin" :# _) r :# _) =
   case maybeList r of
     Just rs -> case nonEmpty rs of

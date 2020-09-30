@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Zaphod.Types.Raw where
@@ -23,9 +24,6 @@ data Raw' k
 data Raw l = Raw' (Raw l) :# l
   deriving (Show, Eq, Functor)
 
-instance (Monoid l) => IsString (Raw l) where
-  fromString s = RSymbol (fromString s) :# mempty
-
 instance HasLocation Raw where
   location (_ :# l) = l
 
@@ -46,6 +44,9 @@ instance MaybeList (Raw l) where
   maybeList (RPair l r :# _) = (l :) <$> maybeList r
   maybeList _ = Nothing
 
+instance (Monoid l) => IsString (Raw l) where
+  fromString s = RSymbol (fromString s) :# mempty
+
 instance (Monoid l) => IsList (Raw l) where
   type Item (Raw l) = Raw l
 
@@ -57,3 +58,16 @@ instance (Monoid l) => IsList (Raw l) where
   toList (RUnit :# _) = []
   toList (RPair l r :# _) = l : GHC.Exts.toList r
   toList _ = bug NotList
+
+pattern RU :: Raw l
+pattern RU <- RUnit :# _
+
+pattern RS :: Symbol -> Raw l
+pattern RS s <- RSymbol s :# _
+
+pattern (:.) :: Raw l -> Raw l -> Raw l
+pattern (:.) x y <- RPair x y :# _
+
+infixr 5 :.
+
+{-# COMPLETE RU, RS, (:.) #-}

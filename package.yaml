@@ -23,7 +23,11 @@ default-extensions:
 - GADTs
 
 dependencies:
-- base-noprelude >= 4.7 && < 5
+# - base-noprelude >= 4.7 && < 5
+- name: base
+  version: ">= 4.7 && < 5"
+  mixin:
+    - hiding (Prelude)
 - bifunctors
 - containers
 - haskeline

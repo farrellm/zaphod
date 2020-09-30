@@ -5,8 +5,10 @@
 
 module Zaphod where
 
+import Control.Exception (handle)
 import Options.Applicative
-import System.Console.Haskeline
+import System.Console.Haskeline (InputT)
+import qualified System.Console.Haskeline as Hl
 import Text.Megaparsec (errorBundlePretty, parse)
 import Zaphod.Base
 import Zaphod.Evaluator
@@ -32,7 +34,7 @@ emptyZState =
     { _environment = baseEnvironment
     }
 
-evalText :: forall m. (MonadState ZState m, MonadException m, MonadIO m) => Text -> m ()
+evalText :: Text -> StateT ZState IO ()
 evalText t =
   case parse tokens "<cmd>" t of
     Left e -> do
@@ -41,15 +43,15 @@ evalText t =
       rs' <- traverse evaluateTopLevel rs
       traverse_ (putTextLn . render) rs'
 
-repl :: forall m. (MonadState ZState m, MonadException m, MonadIO m) => Maybe Text -> m ()
+repl :: Maybe Text -> StateT ZState IO ()
 repl _ = do
   z <- get
-  z' <- runInputT defaultSettings (loop z)
+  z' <- Hl.runInputT Hl.defaultSettings (loop z)
   put z'
   where
-    loop :: ZState -> InputT m ZState
+    loop :: ZState -> InputT (StateT ZState IO) ZState
     loop z = do
-      minput <- getInputLine "> "
+      minput <- Hl.getInputLine "> "
       case minput of
         Nothing -> pure z
         Just ":quit" -> pure z
@@ -62,11 +64,11 @@ repl _ = do
               z' <- foldlM go z rs
               loop z'
     go z r =
-      handle (logBug z) $ do
+      liftIO . handle (logBug z) $ do
         (r', z') <- runStateT (evaluateTopLevel r) z
         putTextLn (render r')
         pure z'
-    logBug :: ZState -> Bug -> InputT m ZState
+    logBug :: ZState -> Bug -> IO ZState
     logBug z b = do
       print b
       pure z
