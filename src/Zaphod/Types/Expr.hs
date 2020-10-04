@@ -12,6 +12,7 @@ import Data.Bifunctor.TH (deriveBifoldable, deriveBifunctor, deriveBitraversable
 import qualified GHC.Exts (IsList (..))
 import qualified GHC.Show (Show (..))
 import Zaphod.Types.Class
+import Zaphod.Types.Location
 import Zaphod.Types.Wrapper
 
 data TypesBug
@@ -22,7 +23,7 @@ data TypesBug
 
 instance Exception TypesBug
 
-data Expr' t h
+data Expr t h
   = EType ZType
   | EUnit
   | ESymbol Symbol t
@@ -41,12 +42,9 @@ data Expr' t h
   | ESpecial t
   deriving (Show, Eq, Functor, Foldable, Traversable)
 
-data Expr t l = Expr' t (Expr t l) :@ l
-  deriving (Show, Eq, Functor)
+type Untyped = LocB Expr ()
 
-type Untyped = Expr ()
-
-type Typed = Expr ZType
+type Typed = LocB Expr ZType
 
 data ZType
   = ZType Int
@@ -129,18 +127,11 @@ instance Show NativeIO where
 
 type Environment = Map Symbol (Typed ())
 
-deriveBifunctor ''Expr'
-deriveBifoldable ''Expr'
-deriveBitraversable ''Expr'
-
 deriveBifunctor ''Expr
 deriveBifoldable ''Expr
 deriveBitraversable ''Expr
 
-instance HasLocation (Expr t) where
-  location (_ :@ l) = l
-
-instance MaybeList (Expr l t) where
+instance MaybeList (LocB Expr l t) where
   isList (EUnit :@ _) = True
   isList (EPair _ r _ :@ _) = isList r
   isList _ = False

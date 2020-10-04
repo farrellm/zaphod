@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -7,6 +8,7 @@ module Zaphod.Types.Raw where
 
 import qualified GHC.Exts (IsList (..))
 import Zaphod.Types.Class
+import Zaphod.Types.Location
 import Zaphod.Types.Wrapper
 
 data TypesBug
@@ -21,11 +23,7 @@ data Raw' k
   | RPair k k
   deriving (Show, Eq, Functor)
 
-data Raw l = Raw' (Raw l) :# l
-  deriving (Show, Eq, Functor)
-
-instance HasLocation Raw where
-  location (_ :# l) = l
+type Raw = LocF Raw'
 
 instance Render (Raw l) where
   render (RUnit :# _) = "()"
