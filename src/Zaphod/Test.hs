@@ -11,8 +11,8 @@ import Zaphod.Parser (token)
 import Zaphod.Types
 
 test :: IO ()
-test =
-  evaluatingStateT emptyZState $ do
+test = do
+  res <- runExceptT . evaluatingStateT emptyZState $ do
     runFile "base.zfd"
     print' (parseTest unit)
     print' (parseTest pair)
@@ -92,6 +92,9 @@ test =
     print' (evaluated ifNil)
     print' (evaluated ifNil')
     print' (evaluated car)
+  case res of
+    Right () -> pass
+    Left err -> print err
   where
     print' ioA = putTextLn . render =<< ioA
     --
@@ -136,7 +139,7 @@ test =
         )
     synthesized a =
       withZaphod
-        ( synthesize
+        ( liftChecker synthesize
             =<< analyzeUntyped
             =<< macroExpand
             =<< parseTest a
@@ -144,7 +147,7 @@ test =
     evaluated a =
       withZaphod
         ( evaluate
-            =<< synthesize
+            =<< liftChecker synthesize
             =<< analyzeUntyped
             =<< macroExpand
             =<< parseTest a

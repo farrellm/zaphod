@@ -6,6 +6,7 @@ module Prelude
   )
 where
 
+import Control.Monad.Except as X (MonadError, throwError)
 import Relude as X
 import Relude.Extra.Bifunctor as X (bimapF)
 

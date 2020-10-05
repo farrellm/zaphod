@@ -5,19 +5,13 @@
 
 module Zaphod where
 
-import Control.Exception (handle)
 import Options.Applicative
-import System.Console.Haskeline (InputT)
 import qualified System.Console.Haskeline as Hl
-import Text.Megaparsec (errorBundlePretty, parse)
+import Text.Megaparsec (errorBundlePretty, runParser)
 import Zaphod.Base
 import Zaphod.Evaluator
 import Zaphod.Parser (tokens)
 import Zaphod.Types
-
-data ZaphodBug
-  = ZaphodBug
-  deriving (Show)
 
 data ZaphodOptions = ZaphodOptions
   { _path :: Maybe FilePath,
@@ -26,7 +20,7 @@ data ZaphodOptions = ZaphodOptions
   }
   deriving (Show)
 
-instance Exception ZaphodBug
+type Zaphod l = StateT ZState (ExceptT (EvaluatorException l) IO)
 
 emptyZState :: ZState
 emptyZState =
@@ -34,48 +28,46 @@ emptyZState =
     { _environment = baseEnvironment
     }
 
-evalText :: Text -> StateT ZState IO ()
+evalText :: Text -> Zaphod () ()
 evalText t =
-  case parse tokens "<cmd>" t of
+  case runParser tokens "<cmd>" t of
     Left e -> putStrLn (errorBundlePretty e)
-    Right rs -> do
-      rs' <- traverse evaluateTopLevel rs
-      traverse_ (putTextLn . render) rs'
+    Right rs -> traverse_ (evaluateTopLevel >=> putTextLn . render) rs
 
-repl :: Maybe Text -> StateT ZState IO ()
+repl :: Maybe Text -> Zaphod () ()
 repl _ = do
   z <- get
   z' <- Hl.runInputT Hl.defaultSettings (loop z)
   put z'
   where
-    loop :: ZState -> InputT (StateT ZState IO) ZState
     loop z = do
       minput <- Hl.getInputLine "> "
       case minput of
         Nothing -> pure z
         Just ":quit" -> pure z
         Just input ->
-          case parse tokens "<repl>" (toText input) of
+          case runParser tokens "<repl>" (toText input) of
             Left e -> do
               putStrLn (errorBundlePretty e)
               loop z
             Right rs -> do
               z' <- foldlM go z rs
               loop z'
-    go z r =
-      liftIO . handle (logBug z) $ do
-        (r', z') <- runStateT (evaluateTopLevel r) z
-        putTextLn (render r')
-        pure z'
-    logBug :: ZState -> Bug -> IO ZState
-    logBug z b = do
-      print b
-      pure z
 
-runFile :: (MonadState ZState m, MonadIO m) => FilePath -> m ()
+    go z r = do
+      res <- runExceptT $ runStateT (evaluateTopLevel r) z
+      case res of
+        Right (r', z') -> do
+          putTextLn (render r')
+          pure z'
+        Left err -> do
+          print err
+          pure z
+
+runFile :: FilePath -> Zaphod () ()
 runFile p = do
   t <- readFileText p
-  zs <- case parse tokens p t of
+  zs <- case runParser tokens p t of
     Left e -> die (errorBundlePretty e)
     Right v -> pure v
   traverse_ evaluateTopLevel zs
@@ -83,21 +75,23 @@ runFile p = do
 zaphod :: IO ()
 zaphod = do
   args <- execParser opts
-  case _path args of
-    Just p -> evaluatingStateT emptyZState $ do
-      runFile "base.zfd"
-      runFile "prelude.zfd"
-      runFile p
-      traverse_ evalText $ _cmd args
-      when (_repl args) $ repl Nothing
-    Nothing -> evaluatingStateT emptyZState $ do
-      runFile "base.zfd"
-      runFile "prelude.zfd"
-      case _cmd args of
-        Just c -> do
-          evalText c
-          when (_repl args) $ repl Nothing
-        Nothing -> repl Nothing
+  e <- runExceptT . evaluatingStateT emptyZState $ do
+    runFile "base.zfd"
+    runFile "prelude.zfd"
+    case _path args of
+      Just p -> do
+        runFile p
+        traverse_ evalText $ _cmd args
+        when (_repl args) $ repl Nothing
+      Nothing ->
+        case _cmd args of
+          Just c -> do
+            evalText c
+            when (_repl args) $ repl Nothing
+          Nothing -> repl Nothing
+  case e of
+    Right () -> pass
+    Left err -> print err
   where
     opts =
       info

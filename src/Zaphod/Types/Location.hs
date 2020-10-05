@@ -33,3 +33,10 @@ deriveBitraversable ''LocB
 
 instance HasLocation (LocB f t) where
   location (_ :@ l) = l
+
+errorLocation :: (Functor f, MonadError (f a) m) => a -> ExceptT (f ()) m b -> m b
+errorLocation a x = do
+  e <- runExceptT x
+  case e of
+    Left err -> throwError (a <$ err)
+    Right res -> pure res

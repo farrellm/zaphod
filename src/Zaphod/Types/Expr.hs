@@ -15,13 +15,19 @@ import Zaphod.Types.Class
 import Zaphod.Types.Location
 import Zaphod.Types.Wrapper
 
-data TypesBug
+data ExprBug
   = EqUndefined
   | StripTypeSpecial
-  | NotList
+  | NotListZType ZType
+  | NotListTyped (Typed ())
+  | NotListUntyped (Untyped ())
   deriving (Show)
 
-instance Exception TypesBug
+instance Exception ExprBug
+
+data NativeException
+  = TypeMismatch Text (Typed ()) Text
+  deriving (Show)
 
 data Expr t h
   = EType ZType
@@ -76,7 +82,7 @@ instance IsList ZType where
 
   toList ZUnit = []
   toList (ZPair l r) = l : GHC.Exts.toList r
-  toList _ = bug NotList
+  toList r = bug (NotListZType r)
 
 stripType :: Typed l -> Untyped l
 stripType = first (const ())
@@ -101,7 +107,7 @@ instance Render ZType where
   render (ZUntyped x) = "{" <> render x <> "}"
   render ZAny = "Any"
 
-newtype Native1 = Native1 (Typed () -> Typed ())
+newtype Native1 = Native1 (Typed () -> Either NativeException (Typed ()))
 
 instance Eq Native1 where
   _ == _ = bug EqUndefined
@@ -109,7 +115,7 @@ instance Eq Native1 where
 instance Show Native1 where
   show _ = "Native1 <native1>"
 
-newtype Native2 = Native2 (Typed () -> Typed () -> Typed ())
+newtype Native2 = Native2 (Typed () -> Typed () -> Either NativeException (Typed ()))
 
 instance Eq Native2 where
   _ == _ = bug EqUndefined
@@ -153,7 +159,7 @@ instance (Monoid l) => IsList (Untyped l) where
 
   toList (EUnit :@ _) = []
   toList (EPair l r _ :@ _) = l : GHC.Exts.toList r
-  toList _ = bug NotList
+  toList e = bug (NotListUntyped $ stripLocation e)
 
 instance (Monoid l) => IsList (Typed l) where
   type Item (Typed l) = Typed l
@@ -165,7 +171,7 @@ instance (Monoid l) => IsList (Typed l) where
 
   toList (EUnit :@ _) = []
   toList (EPair l r _ :@ _) = l : GHC.Exts.toList r
-  toList _ = bug NotList
+  toList e = bug (NotListTyped $ stripLocation e)
 
 exprType :: Typed l -> ZType
 exprType (EType (ZType n) :@ _) = ZType (n + 1)
@@ -232,7 +238,3 @@ instance Render (Typed l) where
 unwrapType :: Typed l -> ZType
 unwrapType (EType z :@ _) = z
 unwrapType e = ZValue $ stripLocation e
-
-unwrapType' :: Untyped l -> ZType
-unwrapType' (EType z :@ _) = z
-unwrapType' e = ZUntyped $ stripLocation e

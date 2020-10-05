@@ -22,11 +22,6 @@ gensym = do
   r <- modifyMVar gensymRef $ \i -> pure (i + 1, i)
   pure $ Symbol ("#<gen>" <> show r)
 
-data EvaluatorBug = TypeMismatch (Typed ()) Text
-  deriving (Show)
-
-instance Exception EvaluatorBug
-
 a :: Universal
 a = Universal "a"
 
@@ -65,20 +60,18 @@ baseEnvironment =
       ("Symbol", EType ZSymbol :@ ()),
       ("Type", EType (ZType 0) :@ ()),
       -- Native functions
-      ("zcons", ENative2 (Native2 $ \l r -> EType (ZPair (getType l) (getType r)) :@ ()) zZCons :@ ()),
+      ("zcons", ENative2 (Native2 zcons) zZCons :@ ()),
       --
-      ("cons", ENative2 (Native2 $ \l r -> EPair l r (ZPair (exprType l) (exprType r)) :@ ()) zCons :@ ()),
-      ("fst", ENative1 (Native1 $ fst . getPair) zFst :@ ()),
-      ("snd", ENative1 (Native1 $ snd . getPair) zSnd :@ ()),
+      ("cons", ENative2 (Native2 $ \l r -> pure $ cons l r) zCons :@ ()),
+      ("fst", ENative1 (Native1 $ fmap fst . getPair "fst") zFst :@ ()),
+      ("snd", ENative1 (Native1 $ fmap snd . getPair "snd") zSnd :@ ()),
       --
-      ("is-nil", ENative1 (Native1 isNil) zPred :@ ()),
-      ("is-symbol", ENative1 (Native1 isSymbol) zPred :@ ()),
-      ("is-pair", ENative1 (Native1 isPair) zPred :@ ()),
-      ("symbol-eq", ENative2 (Native2 stripEq) zSymbolEq :@ ()),
-      ("top-eq", ENative2 (Native2 stripEq) zAnyEq :@ ()),
-      ( "unsafe-gensym",
-        ENativeIO (NativeIO ((:@ ()) <$> (ESymbol <$> gensym <*> pure ZSymbol))) zUnsafeGensym :@ ()
-      ),
+      ("is-nil", ENative1 (Native1 $ pure . isNil) zPred :@ ()),
+      ("is-symbol", ENative1 (Native1 $ pure . isSymbol) zPred :@ ()),
+      ("is-pair", ENative1 (Native1 $ pure . isPair) zPred :@ ()),
+      ("symbol-eq", ENative2 (Native2 $ \x y -> pure $ stripEq x y) zSymbolEq :@ ()),
+      ("top-eq", ENative2 (Native2 $ \x y -> pure $ stripEq x y) zAnyEq :@ ()),
+      ("unsafe-gensym", ENativeIO (NativeIO unsafeGensym) zUnsafeGensym :@ ()),
       -- Special forms
       ("if", ESpecial zIf :@ ()),
       ("apply", ESpecial zApply :@ ()),
@@ -98,6 +91,9 @@ baseEnvironment =
     zPred = ZForall a (ZFunction (zTuple1 za) zBool)
     zSymbolEq = ZFunction (zTuple2 ZSymbol ZSymbol) zBool
     zAnyEq = ZForall a . ZForall b $ ZFunction (zTuple2 za zb) zBool
+    --
+    zcons l r = (:@ ()) . EType <$> (ZPair <$> getType "zcons" l <*> getType "zcons" r)
+    cons l r = EPair l r (ZPair (exprType l) (exprType r)) :@ ()
     isNil (EUnit :@ _) = zTrue
     isNil _ = zFalse
     isSymbol (ESymbol _ _ :@ _) = zTrue
@@ -107,11 +103,12 @@ baseEnvironment =
     toZBool True = zTrue
     toZBool False = zFalse
     stripEq x y = toZBool (stripType x == stripType y)
+    unsafeGensym = (:@ ()) <$> (ESymbol <$> gensym <*> pure ZSymbol)
 
-getType :: Typed l -> ZType
-getType (EType z :@ _) = z
-getType e = bug $ TypeMismatch (stripLocation e) "Type"
+getType :: Text -> Typed l -> Either NativeException ZType
+getType _ (EType z :@ _) = pure z
+getType n e = throwError $ TypeMismatch n (stripLocation e) "Type"
 
-getPair :: Typed l -> (Typed l, Typed l)
-getPair (EPair l r _ :@ _) = (l, r)
-getPair e = bug $ TypeMismatch (stripLocation e) "Pair"
+getPair :: Text -> Typed l -> Either NativeException (Typed l, Typed l)
+getPair _ (EPair l r _ :@ _) = pure (l, r)
+getPair n e = throwError $ TypeMismatch n (stripLocation e) "Pair"

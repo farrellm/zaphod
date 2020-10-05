@@ -11,11 +11,10 @@ import Zaphod.Types.Class
 import Zaphod.Types.Location
 import Zaphod.Types.Wrapper
 
-data TypesBug
-  = NotList
+data RawBug = NotListRaw (Raw ())
   deriving (Show)
 
-instance Exception TypesBug
+instance Exception RawBug
 
 data Raw' k
   = RUnit
@@ -55,7 +54,7 @@ instance (Monoid l) => IsList (Raw l) where
 
   toList (RUnit :# _) = []
   toList (RPair l r :# _) = l : GHC.Exts.toList r
-  toList _ = bug NotList
+  toList r = bug (NotListRaw $ stripLocation r)
 
 pattern RU :: Raw l
 pattern RU <- RUnit :# _
