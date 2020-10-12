@@ -8,6 +8,7 @@
 module Zaphod.Types.Location where
 
 import Data.Bifunctor.TH (deriveBifoldable, deriveBifunctor, deriveBitraversable)
+import Text.Megaparsec (SourcePos)
 import Zaphod.Types.Class
 
 data LocF f l = f (LocF f l) :# l
@@ -40,3 +41,11 @@ errorLocation a x = do
   case e of
     Left err -> throwError (a <$ err)
     Right res -> pure res
+
+data Loc' = Loc SourcePos SourcePos
+  deriving (Show)
+
+instance Semigroup Loc' where
+  Loc a _ <> Loc _ b = Loc a b
+
+type Loc = Maybe Loc'

@@ -8,7 +8,6 @@ module Zaphod.Parser
 where
 
 import qualified Control.Monad.Combinators.NonEmpty as NE (some)
-import qualified Data.List.NonEmpty as NE (reverse)
 import Text.Megaparsec hiding (token, tokens)
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
@@ -66,41 +65,50 @@ identifier = toText <$> lexeme ((:) <$> startingChar <*> many followingChar)
 
 -- Raw
 
-unit :: Parser (Raw ())
-unit = (:# ()) <$> (parens "" $> RUnit)
+withSourcePos :: Parser (Raw' (Raw Loc)) -> Parser (Raw Loc)
+withSourcePos p = do
+  a <- getSourcePos
+  t <- p
+  b <- getSourcePos
+  pure $ t :# Just (Loc a b)
 
-pair :: Parser (Raw ())
-pair = (:# ()) <$> parens (RPair <$> token <* dot <*> token)
+unit :: Parser (Raw Loc)
+unit = withSourcePos $ parens "" $> RUnit
 
-symbol_ :: Parser (Raw ())
-symbol_ = (:# ()) . RSymbol . Symbol <$> identifier
+pair :: Parser (Raw Loc)
+pair = withSourcePos $ parens (RPair <$> token <* dot <*> token)
 
-list :: Parser (Raw ())
-list = parens $ do
-  ts <- NE.some token
-  pure (foldl' (\r l -> RPair l r :# ()) (RUnit :# ()) $ NE.reverse ts)
+symbol_ :: Parser (Raw Loc)
+symbol_ = withSourcePos $ RSymbol . Symbol <$> identifier
 
-tuple :: Parser (Raw ())
-tuple = brackets $ do
-  ts <- many token
-  pure (foldl' (\r l -> RPair l r :# ()) (RUnit :# ()) $ reverse ((RSymbol "tuple" :# ()) : ts))
+mkPair :: Raw Loc -> Raw Loc -> Raw Loc
+mkPair l r = RPair l r :# (location l <> location r)
 
-quote :: Parser (Raw ())
-quote = char '\'' *> (q <$> token)
-  where
-    q x = RPair (RSymbol "quote" :# ()) (RPair x (RUnit :# ()) :# ()) :# ()
+list :: Parser (Raw Loc)
+list = do
+  ts <- parens $ NE.some token
+  pure (foldr mkPair (RUnit :# Nothing) ts)
 
-backquote :: Parser (Raw ())
-backquote = char '`' *> (q <$> token)
-  where
-    q x = RPair (RSymbol "backquote" :# ()) (RPair x (RUnit :# ()) :# ()) :# ()
+tuple :: Parser (Raw Loc)
+tuple = do
+  ts <- brackets $ many token
+  pure (foldr mkPair (RUnit :# Nothing) ("tuple" : ts))
 
-unquote :: Parser (Raw ())
-unquote = char ',' *> (q <$> token)
-  where
-    q x = RPair (RSymbol "unquote" :# ()) (RPair x (RUnit :# ()) :# ()) :# ()
+mkQuote :: Char -> Symbol -> Parser (Raw Loc)
+mkQuote c s = do
+  t <- char c *> token
+  pure $ mkPair (RSymbol s :# Nothing) (mkPair t (RUnit :# Nothing))
 
-token :: Parser (Raw ())
+quote :: Parser (Raw Loc)
+quote = mkQuote '\'' "quote"
+
+backquote :: Parser (Raw Loc)
+backquote = mkQuote '`' "backquote"
+
+unquote :: Parser (Raw Loc)
+unquote = mkQuote ',' "unquote"
+
+token :: Parser (Raw Loc)
 token =
   try unit
     <|> try quote
@@ -111,5 +119,5 @@ token =
     <|> try tuple
     <|> try list
 
-tokens :: Parser [Raw ()]
+tokens :: Parser [Raw Loc]
 tokens = (spaceConsumer <|> mempty) *> many token <* eof

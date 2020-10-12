@@ -28,13 +28,13 @@ emptyZState =
     { _environment = baseEnvironment
     }
 
-evalText :: Text -> Zaphod () ()
+evalText :: Text -> Zaphod Loc ()
 evalText t =
   case runParser tokens "<cmd>" t of
     Left e -> putStrLn (errorBundlePretty e)
     Right rs -> traverse_ (evaluateTopLevel >=> putTextLn . render) rs
 
-repl :: Maybe Text -> Zaphod () ()
+repl :: Maybe Text -> Zaphod Loc ()
 repl _ = do
   z <- get
   z' <- Hl.runInputT Hl.defaultSettings (loop z)
@@ -64,7 +64,7 @@ repl _ = do
           print err
           pure z
 
-runFile :: FilePath -> Zaphod () ()
+runFile :: FilePath -> Zaphod Loc ()
 runFile p = do
   t <- readFileText p
   zs <- case runParser tokens p t of
