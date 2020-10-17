@@ -226,8 +226,8 @@ instantiateL' alphaHat x = do
         %= solveExistential
           (ZFunction (ZExistential alphaHat1) (ZExistential alphaHat2))
           alphaHat
-      a1 `instantiateR` alphaHat1
-      alphaHat2 `instantiateL` a2
+      (`instantiateR` alphaHat1) =<< applyCtxType a1
+      (alphaHat2 `instantiateL`) =<< applyCtxType a2
     -- InstLPair
     go _ (ZPair a1 a2) = do
       (alphaHat1, alphaHat2) <-
@@ -239,8 +239,8 @@ instantiateL' alphaHat x = do
         %= solveExistential
           (ZPair (ZExistential alphaHat1) (ZExistential alphaHat2))
           alphaHat
-      alphaHat1 `instantiateL` a1
-      alphaHat2 `instantiateL` a2
+      (alphaHat1 `instantiateL`) =<< applyCtxType a1
+      (alphaHat2 `instantiateL`) =<< applyCtxType a2
     -- InstLAllR
     go _ (ZForall beta b) =
       withUniversal beta $
