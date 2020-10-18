@@ -1,5 +1,6 @@
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -27,6 +28,38 @@ emptyZState =
   ZState
     { _environment = baseEnvironment
     }
+
+printError :: (MonadIO m) => EvaluatorException Loc -> m ()
+printError err =
+  case err of
+    (NoMatches z) ->
+      putTextLn ("No implicit arguments available of type: " <> render z)
+    (MultipleMatches z es) -> do
+      putTextLn ("Multiple implicit arguments available of type: " <> render z)
+      for_ es $ \e ->
+        putTextLn ("- " <> render e)
+    (InvalidParameters r) -> putTextLn ("Invalid parameters: " <> render r)
+    (NotList r) -> putTextLn ("Expected a list, found: " <> render r)
+    (BadBegin r) -> putTextLn ("Invalid 'begin': " <> render r)
+    (NativeException l n) -> do
+      print n
+      printLocation l
+    (CheckerException c) -> case c of
+      TypeError a b l -> do
+        putTextLn "Type mismatch: "
+        putTextLn (render a <> " /= " <> render b)
+        printLocation l
+      ExistentialAlreadySolved t e u l -> do
+        putTextLn
+          ( "Existential already solved, setting " <> render e <> "=" <> render u
+              <> " to "
+              <> render t
+          )
+        printLocation l
+      _ -> print (stripLocation c)
+  where
+    printLocation (Just l) = putTextLn ("at " <> show l)
+    printLocation Nothing = pass
 
 evalText :: Text -> Zaphod Loc ()
 evalText t =
@@ -61,7 +94,7 @@ repl _ = do
           putTextLn (render r')
           pure z'
         Left err -> do
-          print err
+          printError err
           pure z
 
 runFile :: FilePath -> Zaphod Loc ()
@@ -91,7 +124,7 @@ zaphod = do
           Nothing -> repl Nothing
   case e of
     Right () -> pass
-    Left err -> print err
+    Left err -> printError err
   where
     opts =
       info

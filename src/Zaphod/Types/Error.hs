@@ -19,13 +19,14 @@ data EvaluatorException l
   | InvalidParameters (Raw l)
   | NotList (Raw l)
   | BadBegin (Raw l)
-  | NativeException NativeException
+  | NativeException l NativeException
   | CheckerException (CheckerException l)
   deriving (Show, Functor)
 
 data CheckerException l
   = ArgumentMissmatch [Variable] ZType
   | CannotApply ZType (Untyped l)
-  | TypeError ZType ZType
+  | TypeError ZType ZType l
   | UndefinedVariable Variable
+  | ExistentialAlreadySolved ZType Existential ZType l
   deriving (Show, Functor)

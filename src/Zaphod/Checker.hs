@@ -5,8 +5,9 @@
 
 module Zaphod.Checker (check, synthesize) where
 
+import Control.Monad.Except (runExcept)
 import qualified Data.Text as T
-import Lens.Micro.Mtl
+import Lens.Micro.Mtl (use, (%=), (+=), (-=), (.=), (<<%=))
 import Zaphod.Context
 import Zaphod.Types
 
@@ -15,6 +16,8 @@ type MonadChecker l m =
     MonadState CheckerState m,
     MonadError (CheckerException l) m
   )
+
+type Checker l = StateT CheckerState (ExceptT (CheckerException l) Identity)
 
 bind2 :: (Monad m) => (a -> b -> m c) -> m a -> m b -> m c
 bind2 f x y = do
@@ -117,17 +120,26 @@ isDeeper tau alphaHat = do
     dropExistential (Context (CUnsolved b : rs)) | alphaHat == b = Context rs
     dropExistential (Context (_ : rs)) = dropExistential $ Context rs
 
-subtype :: (MonadChecker l m) => ZType -> ZType -> m ()
+withLocation :: (MonadChecker l m) => l -> Checker () a -> m a
+withLocation loc x = do
+  s <- get
+  case runExcept $ usingStateT s x of
+    Right (r, s') -> do
+      put s'
+      pure r
+    Left e -> throwError (setLocation loc e)
+
+subtype :: (MonadChecker () m) => ZType -> ZType -> m ()
 subtype a b =
   logInfo ("sub " <> render a <> " <: " <> render b) $
     subtype' a b
 
-instantiateL :: (MonadChecker l m) => Existential -> ZType -> m ()
+instantiateL :: (MonadChecker () m) => Existential -> ZType -> m ()
 instantiateL a b =
   logInfo ("inL " <> render a <> " =: " <> render b) $
     instantiateL' a b
 
-instantiateR :: (MonadChecker l m) => ZType -> Existential -> m ()
+instantiateR :: (MonadChecker () m) => ZType -> Existential -> m ()
 instantiateR a b =
   logInfo ("inR " <> render a <> " := " <> render b) $
     instantiateR' a b
@@ -164,7 +176,7 @@ logInfo m x = do
     mkIndent :: (MonadState CheckerState m) => m Text
     mkIndent = flip T.replicate "| " <$> use depth
 
-subtype' :: (MonadChecker l m) => ZType -> ZType -> m ()
+subtype' :: (MonadChecker () m) => ZType -> ZType -> m ()
 -- <:Any
 subtype' _ ZAny = pass
 -- <:Var
@@ -199,9 +211,9 @@ subtype' (ZType m) (ZType n) | m == n = pass
 -- <:Value
 subtype' (ZValue (ESymbol a ZSymbol :@ _)) (ZValue (ESymbol b ZSymbol :@ _)) | a == b = pass
 --
-subtype' a b = throwError $ TypeError a b
+subtype' a b = throwError $ TypeError a b ()
 
-instantiateL' :: (MonadChecker l m) => Existential -> ZType -> m ()
+instantiateL' :: (MonadChecker () m) => Existential -> ZType -> m ()
 instantiateL' alphaHat x = do
   d <-
     if isMonoType x
@@ -211,10 +223,10 @@ instantiateL' alphaHat x = do
   go d x
   where
     -- InstLSolve
-    go True tau = context %= solveExistential tau alphaHat
+    go True tau = solveExistential tau alphaHat
     -- InstLReach
     go _ (ZExistential betaHat) =
-      context %= solveExistential (ZExistential alphaHat) betaHat
+      solveExistential (ZExistential alphaHat) betaHat
     -- InstLArr
     go _ (ZFunction a1 a2) = do
       (alphaHat1, alphaHat2) <-
@@ -222,10 +234,9 @@ instantiateL' alphaHat x = do
           e2 <- nextExtential
           e1 <- nextExtential
           pure (e1, e2)
-      context
-        %= solveExistential
-          (ZFunction (ZExistential alphaHat1) (ZExistential alphaHat2))
-          alphaHat
+      solveExistential
+        (ZFunction (ZExistential alphaHat1) (ZExistential alphaHat2))
+        alphaHat
       (`instantiateR` alphaHat1) =<< applyCtxType a1
       (alphaHat2 `instantiateL`) =<< applyCtxType a2
     -- InstLPair
@@ -235,10 +246,9 @@ instantiateL' alphaHat x = do
           e1 <- nextExtential
           e2 <- nextExtential
           pure (e1, e2)
-      context
-        %= solveExistential
-          (ZPair (ZExistential alphaHat1) (ZExistential alphaHat2))
-          alphaHat
+      solveExistential
+        (ZPair (ZExistential alphaHat1) (ZExistential alphaHat2))
+        alphaHat
       (alphaHat1 `instantiateL`) =<< applyCtxType a1
       (alphaHat2 `instantiateL`) =<< applyCtxType a2
     -- InstLAllR
@@ -248,7 +258,7 @@ instantiateL' alphaHat x = do
     --
     go _ _ = bug Unreachable
 
-instantiateR' :: (MonadChecker l m) => ZType -> Existential -> m ()
+instantiateR' :: (MonadChecker () m) => ZType -> Existential -> m ()
 instantiateR' x alphaHat = do
   d <-
     if isMonoType x
@@ -258,10 +268,9 @@ instantiateR' x alphaHat = do
   go d x
   where
     -- InstRSolve
-    go True tau = context %= solveExistential tau alphaHat
+    go True tau = solveExistential tau alphaHat
     -- InstRReach
-    go _ (ZExistential betaHat) =
-      context %= solveExistential (ZExistential alphaHat) betaHat
+    go _ (ZExistential betaHat) = solveExistential (ZExistential alphaHat) betaHat
     -- InstRArr
     go _ (ZFunction a1 a2) = do
       (alphaHat1, alphaHat2) <-
@@ -269,10 +278,9 @@ instantiateR' x alphaHat = do
           e1 <- nextExtential
           e2 <- nextExtential
           pure (e1, e2)
-      context
-        %= solveExistential
-          (ZFunction (ZExistential alphaHat1) (ZExistential alphaHat2))
-          alphaHat
+      solveExistential
+        (ZFunction (ZExistential alphaHat1) (ZExistential alphaHat2))
+        alphaHat
       (alphaHat1 `instantiateL`) =<< applyCtxType a1
       (`instantiateR` alphaHat2) =<< applyCtxType a2
     -- InstRPair
@@ -282,10 +290,9 @@ instantiateR' x alphaHat = do
           e1 <- nextExtential
           e2 <- nextExtential
           pure (e1, e2)
-      context
-        %= solveExistential
-          (ZPair (ZExistential alphaHat1) (ZExistential alphaHat2))
-          alphaHat
+      solveExistential
+        (ZPair (ZExistential alphaHat1) (ZExistential alphaHat2))
+        alphaHat
       (`instantiateR` alphaHat1) =<< applyCtxType a1
       (`instantiateR` alphaHat2) =<< applyCtxType a2
     -- InstRAllL
@@ -324,7 +331,8 @@ check' (EPair e1 e2 () :@ l) (ZPair b1 b2) = do
 check' e b = do
   a <- synthesize e
   b' <- applyCtxType b
-  exprType a `subtype` b'
+  withLocation (location e) $
+    exprType a `subtype` b'
   applyCtxExpr a
 
 checkFunction :: (MonadChecker l m) => Variable -> Untyped l -> ZType -> ZType -> m (Typed l)
@@ -365,7 +373,8 @@ synthesize' (ESpecial () :@ _) = bug Unreachable
 synthesize' (EApply e1@(EImplicit _ _ _ _ :@ _) e2 () :@ l) = do
   e1' <- synthesize e1
   e2' <- synthesize e2
-  exprType e2' `subtype` ZUnit
+  withLocation l $
+    exprType e2' `subtype` ZUnit
   case exprType e1' of
     ZFunction _ c -> applyCtxExpr (EApply e1' e2' c :@ l)
     _ -> bug Unreachable
@@ -434,7 +443,8 @@ applySynth' (ZExistential alphaHat) e = do
     a1 <- nextExtential
     pure (a2, a1)
   let f = ZFunction (ZExistential alphaHat1) (ZExistential alphaHat2)
-  context %= solveExistential f alphaHat
+  withLocation (location e) $
+    solveExistential f alphaHat
   e' <- e `check` ZExistential alphaHat1
   (e',) <$> applyCtxType (ZExistential alphaHat2)
 -- ->App

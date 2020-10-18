@@ -60,7 +60,7 @@ liftChecker f x = do
     Left err -> throwError (CheckerException err)
 
 liftNative :: (MonadError (EvaluatorException ()) m) => Either NativeException a -> m a
-liftNative = liftEither . first NativeException
+liftNative = liftEither . first (NativeException ())
 
 evaluate :: (MonadEvaluator l m) => Typed l -> m (Typed ())
 evaluate expr = do

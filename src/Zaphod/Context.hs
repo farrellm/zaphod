@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# OPTIONS_GHC -fno-warn-deprecations #-}
 
 module Zaphod.Context
@@ -16,6 +17,7 @@ module Zaphod.Context
 where
 
 import qualified Data.Map as M
+import Lens.Micro.Mtl (use, (<~))
 import Zaphod.Types
 
 data ContextBug
@@ -23,7 +25,6 @@ data ContextBug
   | MissingUniversalInContext Universal
   | MissingVarInContext Variable
   | MissingExistentialInContext Existential
-  | ExistentialAlreadySolved ZType Existential
   | UnexpectedExistentialInSolve Existential Existential
   | NotMonotype ZType
   | WellFormedUntyped (Untyped ())
@@ -95,14 +96,17 @@ substitute x y (ZFunction a b) = ZFunction (substitute x y a) (substitute x y b)
 substitute x y (ZPair a b) = ZPair (substitute x y a) (substitute x y b)
 substitute _ _ z = z
 
-solveExistential :: ZType -> Existential -> Context -> Context
-solveExistential z e (Context cs) = Context $ go cs
+solveExistential ::
+  (MonadState CheckerState m, MonadError (CheckerException ()) m) => ZType -> Existential -> m ()
+solveExistential z e = do
+  (Context cs) <- use context
+  context <~ Context <$> go cs
   where
-    go (CUnsolved f : rs) | e == f = CSolved f z : rs
-    go (CSolved f _y : _) | e == f = bug $ ExistentialAlreadySolved z e
-    go (CSolved f q : rs) = CSolved f ((z `substitute` ZExistential e) q) : go rs
-    go (CVariable x q : rs) = CVariable x ((z `substitute` ZExistential e) q) : go rs
-    go (r : rs) = r : go rs
+    go (CUnsolved f : rs) | e == f = pure $ CSolved f z : rs
+    go (CSolved f y : _) | e == f = throwError $ ExistentialAlreadySolved z f y ()
+    go (CSolved f q : rs) = (CSolved f ((z `substitute` ZExistential e) q) :) <$> go rs
+    go (CVariable x q : rs) = (CVariable x ((z `substitute` ZExistential e) q) :) <$> go rs
+    go (r : rs) = (r :) <$> go rs
     go [] = bug $ MissingExistentialInContext e
 
 isWellFormed :: ZType -> Context -> Bool
