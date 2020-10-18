@@ -76,7 +76,7 @@ baseEnvironment =
       ("if", ESpecial zIf :@ ()),
       ("apply", ESpecial zApply :@ ()),
       -- bypass type checker
-      ("unsafe-coerce", ELambda' [Variable "x"] (ESymbol "x" zb :@ ()) mempty zUnsafeCoerce :@ ())
+      ("unsafe-coerce", ENative1 (Native1 $ pure . id) zUnsafeCoerce :@ ())
     ]
   where
     zCons = ZForall a . ZForall b $ ZFunction (zTuple2 za zb) (ZPair za zb)

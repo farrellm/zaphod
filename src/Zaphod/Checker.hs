@@ -305,18 +305,12 @@ check' e (ZForall alpha a) = withUniversal alpha $ e `check` a
 check' (ELambda x e n () :@ l) z@(ZFunction a b) = do
   e' <- checkFunction x e a b
   applyCtxExpr (ELambda x e' n z :@ l)
-check' (ELambda' xs e n () :@ l) z@(ZFunction a b) = do
-  e' <- checkFunction' xs e a b
-  applyCtxExpr (ELambda' xs e' n z :@ l)
 check' (EImplicit x e n () :@ l) z@(ZFunction a b) = do
   e' <- checkFunction x e a b
   applyCtxExpr (ELambda x e' n z :@ l)
 check' (EMacro x e () :@ l) z@(ZFunction a b) = do
   e'' <- checkFunction x e a b
   applyCtxExpr (EMacro x e'' z :@ l)
-check' (EMacro' xs e () :@ l) z@(ZFunction a b) = do
-  e'' <- checkFunction' xs e a b
-  applyCtxExpr (EMacro' xs e'' z :@ l)
 check' (ENative1 _ () :@ _) _ = bug Unreachable
 check' (ENative2 _ () :@ _) _ = bug Unreachable
 check' (ENativeIO _ () :@ _) _ = bug Unreachable
@@ -340,16 +334,6 @@ checkFunction x e a b = do
   context %= dropVar x
   pure e'
 
-checkFunction' :: (MonadChecker l m) => [Variable] -> Untyped l -> ZType -> ZType -> m (Typed l)
-checkFunction' xs e a b =
-  case maybeList a of
-    Just ts | length xs == length ts -> do
-      for_ (zip xs ts) $ \(x, t) -> context %= (CVariable x t <:)
-      e' <- e `check` b
-      for_ (reverse xs) $ \x -> context %= dropVar x
-      pure e'
-    _ -> throwError $ ArgumentMissmatch xs a
-
 synthesize' :: (MonadChecker l m) => Untyped l -> m (Typed l)
 -- Var
 synthesize' (ESymbol a () :@ l) = do
@@ -367,34 +351,28 @@ synthesize' (EUnit :@ l) = pure (EUnit :@ l)
 synthesize' (ELambda x e n () :@ l) = do
   (e', alphaHat, betaHat) <- synthesizeFunction x e
   applyCtxExpr (ELambda x e' n (ZFunction alphaHat betaHat) :@ l)
-synthesize' (ELambda' xs e n () :@ l) = do
-  (e', alphaHats, betaHat) <- synthesizeFunction' xs e
-  applyCtxExpr (ELambda' xs e' n (ZFunction alphaHats betaHat) :@ l)
 synthesize' (EImplicit x e n () :@ l) = do
   (e', alphaHat, betaHat) <- synthesizeFunction x e
   applyCtxExpr (EImplicit x e' n (ZFunction alphaHat betaHat) :@ l)
 synthesize' (EMacro x e () :@ l) = do
   (e', alphaHat, betaHat) <- synthesizeFunction x e
   applyCtxExpr (EMacro x e' (ZFunction alphaHat betaHat) :@ l)
-synthesize' (EMacro' xs e () :@ l) = do
-  (e', alphaHats, betaHat) <- synthesizeFunction' xs e
-  applyCtxExpr (EMacro' xs e' (ZFunction alphaHats betaHat) :@ l)
 synthesize' (ENative1 _ () :@ _) = bug Unreachable
 synthesize' (ENative2 _ () :@ _) = bug Unreachable
 synthesize' (ENativeIO _ () :@ _) = bug Unreachable
 synthesize' (ESpecial () :@ _) = bug Unreachable
 -- ->E
-synthesize' (EApply e1@(EImplicit _ _ _ _ :@ _) [] () :@ l) = do
+synthesize' (EApply e1@(EImplicit _ _ _ _ :@ _) e2 () :@ l) = do
   e1' <- synthesize e1
+  e2' <- synthesize e2
+  exprType e2' `subtype` ZUnit
   case exprType e1' of
-    ZFunction _ c -> applyCtxExpr (EApply e1' [] c :@ l)
+    ZFunction _ c -> applyCtxExpr (EApply e1' e2' c :@ l)
     _ -> bug Unreachable
 synthesize' (EApply e1 e2 () :@ l) = do
   e1' <- synthesize e1
-  (e2', c) <- exprType e1' `applySynth` fromList e2
-  case maybeList e2' of
-    Just e2'' -> applyCtxExpr (EApply e1' e2'' c :@ l)
-    Nothing -> bug Unreachable
+  (e2', c) <- exprType e1' `applySynth` e2
+  applyCtxExpr (EApply e1' e2' c :@ l)
 synthesize' (EPair l r () :@ loc) = do
   l' <- synthesize l
   r' <- synthesize r
@@ -442,17 +420,6 @@ synthesizeFunction x e = do
   e' <- e `check` betaHat
   context %= dropVar x
   pure (e', alphaHat, betaHat)
-
-synthesizeFunction' :: (MonadChecker l m) => [Variable] -> Untyped l -> m (Typed l, ZType, ZType)
-synthesizeFunction' xs e = do
-  alphaHats <- forM xs $ \x -> (x,) . ZExistential <$> nextExtential
-  betaHat <- ZExistential <$> nextExtential
-  for_ alphaHats $ \(x, alphaHat) ->
-    context %= (CVariable x alphaHat <:)
-  e' <- e `check` betaHat
-  for_ (reverse alphaHats) $ \(x, _) ->
-    context %= dropVar x
-  pure (e', fromList (snd <$> alphaHats), betaHat)
 
 applySynth' :: (MonadChecker l m) => ZType -> Untyped l -> m (Typed l, ZType)
 -- ∀App

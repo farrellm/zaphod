@@ -1,49 +1,102 @@
 (def car
-     (forall a (-> (cons a ()) Any))
+     (-> Any Any)
      (unsafe-coerce fst))
 
 (def cdr
-     (forall a (-> (cons a ()) Any))
+     (-> Any Any)
      (unsafe-coerce snd))
 
+(def caar (-> Any Any) (_lambda x (car (car (car x)))))
+(def cdar (-> Any Any) (_lambda x (cdr (car (car x)))))
+(def cadr (-> Any Any) (_lambda x (car (cdr (car x)))))
+(def cddr (-> Any Any) (_lambda x (cdr (cdr (car x)))))
+
+(def caaar (-> Any Any) (_lambda x (car (car (car (car x))))))
+(def caadr (-> Any Any) (_lambda x (car (car (cdr (car x))))))
+(def caddr (-> Any Any) (_lambda x (car (cdr (cdr (car x))))))
+(def cdadr (-> Any Any) (_lambda x (cdr (car (cdr (car x))))))
+(def cddar (-> Any Any) (_lambda x (cdr (cdr (car (car x))))))
+
 (def tuple'
-     (-> (cons Any ()) Any)
-     (lambda (t)
+     (-> Any Any)
+     (_lambda t
        (if (is-nil t) (: () Any)
            (cons 'cons
                  (cons (car t)
-                       (cons (tuple' (cdr t))
+                       (cons (apply tuple' (cdr t))
                              ()))))))
 
 (def tuple
      (-> Any Any)
-     (macro t (tuple' t)))
+     (_macro t (apply tuple' t)))
+
+(def let1'
+     (-> Any Any)
+     (_lambda x
+       ['apply
+        ['_lambda (car x) (caddr x)]
+        (cadr x)]))
+
+(def let1
+     (-> [Symbol Any Any] Any)
+     (_macro x (apply let1' x)))
+
+(def lambda'
+     (-> Any Any)
+     (_lambda l
+       ['apply
+        (cons '_lambda
+              (cons (caadr l)
+                    (if (is-nil (cdadr l))
+                        (cddr l)
+                        [(apply lambda' (cons ['snd (car l)]
+                                              (cons (cdadr l)
+                                                    (cddr l))))])))
+        ['fst (car l)]]))
+
+(def lambda
+     (-> Any Any)
+     (_macro l
+       (if (is-nil (car l))
+           (: (cons '_lambda
+                    (cons (unsafe-gensym) (cdr l)))
+              Any)
+           (if (is-symbol (car l))
+               (: (cons '_lambda l) Any)
+               (let1 v (unsafe-gensym)
+                     ['_lambda v (apply lambda' (cons v l))])))))
+
+(def macro
+     (-> Any Any)
+     (_macro l
+       (if (is-symbol (car l))
+           (: (cons '_macro l) Any)
+           (let1 v (unsafe-gensym)
+                 ['_macro v (apply lambda' (cons v l))]))))
 
 (def defn
-     (-> [(Symbol . Any) Type Any] Any)
+     (-> [(cons Symbol Any) Type Any] Any)
      (macro (p t e)
-       ['def (car p) t ['lambda (cdr p) e]]))
+       ['def (fst p) t ['lambda (snd p) e]]))
 
 (def defmacro
-     (-> [(Symbol . Any) Type Any] Any)
+     (-> [(cons Symbol Any) Type Any] Any)
      (macro (p t e)
        ['def (car p) t ['macro (cdr p) e]]))
 
 (defn (top-foldr f i l)
-  (forall a (forall b (-> [(-> [b a] a) a Any] a)))
+  (_forall a (_forall b (-> [(-> [b a] a) a Any] a)))
   (if (is-nil l) i
       (f (unsafe-coerce (car l))
          (top-foldr f i (cdr l)))))
 
 (defn (mk-forall u e)
   (-> [Symbol Any] Any)
-  ['forall u e])
+  ['_forall u e])
 
 (defmacro (forall us e)
   (-> [Any Any] Any)
-  (if (is-symbol us)
-      (mk-forall (unsafe-coerce us) e)
-      (top-foldr mk-forall e us)))
+  (top-foldr mk-forall e us))
 
 (defn (top-foldl f i l)
   (forall (a b) (-> [(-> [a b] a) a Any] a))
@@ -63,14 +116,8 @@
               (-> [a] c)))
   (lambda (x) (f (g x))))
 
-(def caar (compose car car))
-(def cadr (compose car cdr))
-(def cdar (compose cdr car))
-(def cddr (compose cdr cdr))
-(def caddr (compose car cddr))
-
 (defn (mk-let b e)
-  (forall a (-> [[Symbol Any] a] Any))
+  (forall (a) (-> [[Symbol Any] a] Any))
   [['lambda [(fst b)] e] (fst (snd b))])
 
 (defmacro (let ps e)
@@ -79,10 +126,9 @@
 
 (defn (foralls xs e)
   (-> [Any Any] Any)
-  (top-foldr
-   (lambda (x e) (: ['forall x e] Any))
-   e
-   xs))
+  (if (is-nil xs)
+      (: e Any)
+      ['forall xs e]))
 
 (defn (gen-syms xs)
   (-> [Any] Any)
@@ -110,7 +156,7 @@
              cs))))
 
 (def data
-     (-> ((Symbol . Any) . Any) Any)
+     (-> (cons (cons Symbol Any) Any) Any)
      (macro d (data' (fst (fst d)) (cdar d) (cdr d))))
 
 (defn (top-init xs)

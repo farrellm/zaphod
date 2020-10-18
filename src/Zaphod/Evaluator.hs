@@ -37,10 +37,8 @@ setType _ (EUnit :@ l) = EUnit :@ l
 setType _ (EType z :@ l) = EType z :@ l
 setType z (ESymbol s _ :@ l) = ESymbol s z :@ l
 setType z (ELambda x e env _ :@ l) = ELambda x e env z :@ l
-setType z (ELambda' xs e env _ :@ l) = ELambda' xs e env z :@ l
 setType z (EImplicit x e env _ :@ l) = EImplicit x e env z :@ l
 setType z (EMacro x e _ :@ l) = EMacro x e z :@ l
-setType z (EMacro' x e _ :@ l) = EMacro' x e z :@ l
 setType z (EApply f xs _ :@ l) = EApply f xs z :@ l
 setType z (EPair x y _ :@ l) = EPair x y z :@ l
 setType z (EAnnotation e _ :@ l) = EAnnotation e z :@ l
@@ -65,9 +63,9 @@ liftNative :: (MonadError (EvaluatorException ()) m) => Either NativeException a
 liftNative = liftEither . first NativeException
 
 evaluate :: (MonadEvaluator l m) => Typed l -> m (Typed ())
-evaluate x = do
+evaluate expr = do
   env <- ask
-  runReaderT (eval x) (mempty, env)
+  runReaderT (eval expr) (mempty, env)
   where
     eval ::
       ( Monoid k,
@@ -100,25 +98,17 @@ evaluate x = do
           local (\(_, n) -> (M.insert v xs' env, n)) . errorLocation l $ eval e
         (EImplicit (Variable v) e env _ :@ _, _) ->
           local (\(_, n) -> (M.insert v xs' env, n)) . errorLocation l $ eval e
-        (ELambda' vs e env _ :@ _, Just ys) ->
-          let vxs = zip vs ys
-           in local (\(_, n) -> (foldl' extend env vxs, n)) . errorLocation l $ eval e
         (ENative1 (Native1 g) _ :@ _, Just [a]) ->
           errorLocation l . liftNative $ g a
         (ENative2 (Native2 g) _ :@ _, Just [a, b]) ->
           errorLocation l . liftNative $ g a b
         _ -> bug Unreachable
-    eval (EApply f xs r :@ l) = do
+    eval (EApply f x r :@ l) = do
       f' <- eval f
+      x' <- eval x
       setType r <$> case f' of
-        ELambda (Variable v) e env _ :@ _ -> do
-          xs' <- traverse eval xs
-          local (\(_, n) -> (M.insert v (fromList xs') env, n)) . errorLocation l $ eval e
-        ELambda' vs e env _ :@ _
-          | length vs == length xs -> do
-            vxs <- traverse (\(v, z) -> (v,) <$> eval z) $ zip vs xs
-            local (\(_, n) -> (foldl' extend env vxs, n)) . errorLocation l $ eval e
-          | otherwise -> bug Unreachable
+        ELambda (Variable v) e env _ :@ _ ->
+          local (\(_, n) -> (M.insert v x' env, n)) . errorLocation l $ eval e
         EImplicit (Variable v) e env (ZFunction i _) :@ _ -> do
           (a, b) <- bimapF (findOfType i) (findOfType i) ask
           case M.toList a ++ M.toList b of
@@ -126,28 +116,22 @@ evaluate x = do
             [] -> throwError (NoMatches i)
             ss -> throwError (MultipleMatches i (snd <$> ss))
         ENative1 (Native1 g) _ :@ _ ->
-          case xs of
-            [a] -> do
-              a' <- eval a
-              errorLocation l . liftNative $ g a'
+          case maybeList x' of
+            Just [a] -> errorLocation l . liftNative $ g a
             _ -> bug Unreachable
         ENative2 (Native2 g) _ :@ _ ->
-          case xs of
-            [a, b] -> do
-              a' <- eval a
-              b' <- eval b
-              errorLocation l . liftNative $ g a' b'
+          case maybeList x' of
+            Just [a, b] -> errorLocation l . liftNative $ g a b
             _ -> bug Unreachable
         ENativeIO (NativeIO g) _ :@ _ ->
-          case xs of
-            [] -> liftIO g
+          case maybeList x of
+            Just [] -> liftIO g
             _ -> bug Unreachable
         _ -> bug Unreachable
       where
         findOfType z = M.filter ((z ==) . exprType)
-    eval (EPair _ _ _ :@ _) = bug Unreachable
+    eval (EPair a b t :@ _) = (:@ ()) <$> (EPair <$> eval a <*> eval b <*> pure t)
     eval (ELambda v e _ t :@ _) = (:@ ()) <$> (ELambda v (stripLocation e) <$> (fst <$> ask) <*> pure t)
-    eval (ELambda' vs e _ t :@ _) = (:@ ()) <$> (ELambda' vs (stripLocation e) <$> (fst <$> ask) <*> pure t)
     eval (EQuote z _ :@ _) = pure (stripLocation z)
     eval (EType t :@ l) = (:@ ()) . EType <$> errorLocation l (evalType t)
     eval e = pure (stripLocation e)
@@ -159,8 +143,6 @@ evaluate x = do
     evalType (ZValue a) = unwrapType <$> eval a
     evalType (ZUntyped _) = bug Unreachable
     evalType z = pure z
-    --
-    extend env (Variable v, z) = M.insert v z env
 
 evaluateType :: (MonadEvaluator l m) => Untyped l -> m ZType
 evaluateType u = do
@@ -171,7 +153,7 @@ evaluateType u = do
 analyzeType :: (MonadEvaluator l m) => Raw l -> m ZType
 analyzeType RU = pure ZUnit
 analyzeType x@(RS _) = ZUntyped . stripLocation <$> analyzeUntyped x
-analyzeType (RS "forall" :. RS u :. z :. RU) = ZForall (Universal u) <$> analyzeType z
+analyzeType (RS "_forall" :. RS u :. z :. RU) = ZForall (Universal u) <$> analyzeType z
 analyzeType (RS "->" :. a :. b :. RU) = ZFunction <$> analyzeType a <*> analyzeType b
 analyzeType (RS "quote" :. x :. RU) =
   pure . ZUntyped $ EQuote (EType (quoteType x) :@ ()) () :@ ()
@@ -182,51 +164,41 @@ analyzeType (RS "quote" :. x :. RU) =
     quoteType (RS s) = ZValue $ ESymbol s ZSymbol :@ ()
 analyzeType (RPair (RSymbol "cons" :# lc) ts :# lp) =
   analyzeType (RPair (RSymbol "zcons" :# lc) ts :# lp)
-analyzeType (a :. b) =
+analyzeType (a :. b) = do
+  a' <- stripLocation <$> analyzeUntyped a
   case maybeList b of
     Just xs -> do
       xs' <- traverse (fmap (\z -> EType z :@ ()) . analyzeType) xs
-      a' <- stripLocation <$> analyzeUntyped a
-      pure $ ZUntyped (EApply a' xs' () :@ ())
-    Nothing -> ZPair <$> analyzeType a <*> analyzeType b
+      pure $ ZUntyped (EApply a' (fromList xs') () :@ ())
+    Nothing -> do
+      b' <- analyzeType b
+      pure $ ZUntyped (EApply a' (EType b' :@ ()) () :@ ())
 
 analyzeQuoted :: Raw l -> Untyped l
 analyzeQuoted (RUnit :# l) = EUnit :@ l
 analyzeQuoted (RSymbol s :# l) = ESymbol s () :@ l
 analyzeQuoted (RPair x y :# l) = EPair (analyzeQuoted x) (analyzeQuoted y) () :@ l
 
-mkParams :: Raw l -> Maybe [Variable]
-mkParams RU = Just []
-mkParams (RS z :. zs) = (Variable z :) <$> mkParams zs
-mkParams _ = Nothing
-
 analyzeUntyped :: (MonadEvaluator l m) => Raw l -> m (Untyped l)
 analyzeUntyped (RUnit :# l) = pure (EUnit :@ l)
 analyzeUntyped (RSymbol s :# l) = pure $ ESymbol s () :@ l
-analyzeUntyped (RS "lambda" `RPair` (RS x :. e :. RU) :# l) =
+analyzeUntyped (RS "_lambda" `RPair` (RS x :. e :. RU) :# l) =
   (:@ l) <$> (ELambda (Variable x) <$> analyzeUntyped e <*> pure mempty <*> pure ())
-analyzeUntyped (RS "lambda" `RPair` (xs :. e :. RU) :# l) =
-  case mkParams xs of
-    Just ps -> (:@ l) <$> (ELambda' ps <$> analyzeUntyped e <*> pure mempty <*> pure ())
-    Nothing -> throwError (InvalidParameters xs)
 analyzeUntyped (RS "implicit" `RPair` (RS x :. e :. RU) :# l) =
   (:@ l) <$> (EImplicit (Variable x) <$> analyzeUntyped e <*> pure mempty <*> pure ())
-analyzeUntyped (RS "macro" `RPair` (RS x :. e :. RU) :# l) =
+analyzeUntyped (RS "_macro" `RPair` (RS x :. e :. RU) :# l) =
   (:@ l) <$> (EMacro (Variable x) <$> analyzeUntyped e <*> pure ())
-analyzeUntyped (RS "macro" `RPair` (xs :. e :. RU) :# l) =
-  case mkParams xs of
-    Just ps -> (:@ l) <$> (EMacro' ps <$> analyzeUntyped e <*> pure ())
-    Nothing -> throwError (InvalidParameters xs)
 analyzeUntyped (RS ":" `RPair` (t :. RS "Type" :. RU) :# l) =
   (:@ l) . EType <$> analyzeType t
 analyzeUntyped (RS ":" `RPair` (e :. t :. RU) :# l) =
   (:@ l) <$> (EAnnotation <$> analyzeUntyped e <*> evaluateRawType t)
 analyzeUntyped (RS "quote" `RPair` (x :. RU) :# l) =
   pure $ EQuote (analyzeQuoted x) () :@ l
-analyzeUntyped r@(RPair a b :# l) =
+analyzeUntyped (RPair a b :# l) =
   case maybeList b of
-    Just xs -> (:@ l) <$> (EApply <$> analyzeUntyped a <*> traverse analyzeUntyped xs <*> pure ())
-    Nothing -> throwError (NotList r)
+    Just xs ->
+      (:@ l) <$> (EApply <$> analyzeUntyped a <*> (fromList <$> traverse analyzeUntyped xs) <*> pure ())
+    Nothing -> (:@ l) <$> (EApply <$> analyzeUntyped a <*> analyzeUntyped b <*> pure ())
 
 evaluateRaw ::
   (Monoid l, MonadState ZState m, MonadError (EvaluatorException l) m, MonadIO m) =>
@@ -297,33 +269,22 @@ macroExpand1 w = do
   env <- ask
   evaluatingStateT (emptyCheckerState env) $ go w
   where
-    go q@(RPair a@(RSymbol s :# _) b :# lq) =
-      case maybeList b of
-        Just xs -> do
-          f <- M.lookup s <$> ask
-          case f of
-            Just (EMacro v e _ :@ ()) -> goMacro xs $ ELambda v (stripType e) mempty () :@ ()
-            Just (EMacro' vs e _ :@ ()) -> goMacro xs $ ELambda' vs (stripType e) mempty () :@ ()
-            _ -> goList xs
-        Nothing -> (:# lq) . RPair a <$> go b
+    go (RPair a@(RSymbol s :# _) b :# lq) = do
+      f <- M.lookup s <$> ask
+      case f of
+        Just (EMacro v e _ :@ ()) -> goMacro $ ELambda v (stripType e) mempty () :@ ()
+        _ -> (:# lq) . RPair a <$> goInner b
       where
-        q' = stripLocation q
-
-        checkResult x' xs = do
-          let r = toRaw x'
-          if r /= q'
-            then pure $ setLocation lq r
-            else goList xs
-
-        goMacro xs l = do
+        goMacro l = do
           let f' = setLocation mempty l
-          xs' <- traverse (analyzeUntyped . quote) xs
-          x' <- evaluate =<< liftChecker synthesize (EApply f' xs' () :@ lq)
-          checkResult x' xs
-
-        goList xs = fromList . (a :) <$> traverse go xs
-    go (RPair x y :# l) = (:# l) <$> (RPair <$> go x <*> go y)
+          b' <- analyzeUntyped $ quote b
+          x' <- evaluate =<< liftChecker synthesize (EApply f' b' () :@ lq)
+          pure $ setLocation lq (toRaw x')
+    go (RPair x y :# l) = (:# l) <$> (RPair <$> go x <*> goInner y)
     go r = pure r
+
+    goInner (RPair x y :# l) = (:# l) <$> (RPair <$> go x <*> goInner y)
+    goInner r = pure r
 
     quote e = ["quote", e]
 
