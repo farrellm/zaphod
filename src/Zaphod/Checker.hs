@@ -70,6 +70,7 @@ applyCtxType z@(ZExistential x) = do
     RSolved t -> pure t
     _ -> pure z
 applyCtxType (ZFunction a b) = ZFunction <$> applyCtxType a <*> applyCtxType b
+applyCtxType (ZImplicit a b) = ZImplicit <$> applyCtxType a <*> applyCtxType b
 applyCtxType (ZPair a b) = ZPair <$> applyCtxType a <*> applyCtxType b
 applyCtxType (ZForall a t) = ZForall a <$> applyCtxType t
 applyCtxType (ZValue x) = ZValue <$> applyCtxExpr x
@@ -88,6 +89,7 @@ notInFV _ (ZUniversal _) = True
 notInFV a (ZExistential b) = a /= b
 notInFV a (ZForall _ b) = notInFV a b
 notInFV a (ZFunction b c) = notInFV a b && notInFV a c
+notInFV a (ZImplicit b c) = notInFV a b && notInFV a c
 notInFV a (ZPair b c) = notInFV a b && notInFV a c
 notInFV _ ZSymbol = True
 notInFV a (ZValue x) = notInFV a (exprType x)
@@ -190,6 +192,9 @@ subtype' (ZExistential alphaHat) (ZExistential betaHat) | alphaHat == betaHat = 
 subtype' (ZFunction a1 a2) (ZFunction b1 b2) = do
   bind2 subtype (applyCtxType b1) (applyCtxType a1)
   bind2 subtype (applyCtxType a2) (applyCtxType b2)
+subtype' (ZImplicit a1 a2) (ZImplicit b1 b2) = do
+  bind2 subtype (applyCtxType b1) (applyCtxType a1)
+  bind2 subtype (applyCtxType a2) (applyCtxType b2)
 -- <:Pair
 subtype' (ZPair a1 a2) (ZPair b1 b2) = do
   bind2 subtype (applyCtxType a1) (applyCtxType b1)
@@ -229,17 +234,8 @@ instantiateL' alphaHat x = do
     go _ (ZExistential betaHat) =
       solveExistential (ZExistential alphaHat) betaHat
     -- InstLArr
-    go _ (ZFunction a1 a2) = do
-      (alphaHat1, alphaHat2) <-
-        withHole alphaHat $ do
-          e2 <- nextExtential
-          e1 <- nextExtential
-          pure (e1, e2)
-      solveExistential
-        (ZFunction (ZExistential alphaHat1) (ZExistential alphaHat2))
-        alphaHat
-      (`instantiateR` alphaHat1) =<< applyCtxType a1
-      (alphaHat2 `instantiateL`) =<< applyCtxType a2
+    go _ (ZFunction a1 a2) = goFunction ZFunction a1 a2
+    go _ (ZImplicit a1 a2) = goFunction ZImplicit a1 a2
     -- InstLPair
     go _ (ZPair a1 a2) = do
       (alphaHat1, alphaHat2) <-
@@ -259,6 +255,18 @@ instantiateL' alphaHat x = do
     --
     go _ _ = bug Unreachable
 
+    goFunction f a1 a2 = do
+      (alphaHat1, alphaHat2) <-
+        withHole alphaHat $ do
+          e2 <- nextExtential
+          e1 <- nextExtential
+          pure (e1, e2)
+      solveExistential
+        (f (ZExistential alphaHat1) (ZExistential alphaHat2))
+        alphaHat
+      (`instantiateR` alphaHat1) =<< applyCtxType a1
+      (alphaHat2 `instantiateL`) =<< applyCtxType a2
+
 instantiateR' :: (MonadChecker () m) => ZType -> Existential -> m ()
 instantiateR' x alphaHat = do
   d <-
@@ -273,17 +281,8 @@ instantiateR' x alphaHat = do
     -- InstRReach
     go _ (ZExistential betaHat) = solveExistential (ZExistential alphaHat) betaHat
     -- InstRArr
-    go _ (ZFunction a1 a2) = do
-      (alphaHat1, alphaHat2) <-
-        withHole alphaHat $ do
-          e1 <- nextExtential
-          e2 <- nextExtential
-          pure (e1, e2)
-      solveExistential
-        (ZFunction (ZExistential alphaHat1) (ZExistential alphaHat2))
-        alphaHat
-      (alphaHat1 `instantiateL`) =<< applyCtxType a1
-      (`instantiateR` alphaHat2) =<< applyCtxType a2
+    go _ (ZFunction a1 a2) = goFunction ZFunction a1 a2
+    go _ (ZImplicit a1 a2) = goFunction ZImplicit a1 a2
     -- InstRPair
     go _ (ZPair a1 a2) = do
       (alphaHat1, alphaHat2) <-
@@ -304,6 +303,18 @@ instantiateR' x alphaHat = do
     --
     go _ _ = bug Unreachable
 
+    goFunction f a1 a2 = do
+      (alphaHat1, alphaHat2) <-
+        withHole alphaHat $ do
+          e1 <- nextExtential
+          e2 <- nextExtential
+          pure (e1, e2)
+      solveExistential
+        (f (ZExistential alphaHat1) (ZExistential alphaHat2))
+        alphaHat
+      (alphaHat1 `instantiateL`) =<< applyCtxType a1
+      (`instantiateR` alphaHat2) =<< applyCtxType a2
+
 check' :: (MonadChecker l m) => Untyped l -> ZType -> m (Typed l)
 -- 1|
 check' (EUnit :@ l) ZUnit = pure (EUnit :@ l)
@@ -313,9 +324,9 @@ check' e (ZForall alpha a) = withUniversal alpha $ e `check` a
 check' (ELambda x e n () :@ l) z@(ZFunction a b) = do
   e' <- checkFunction x e a b
   applyCtxExpr (ELambda x e' n z :@ l)
-check' (EImplicit x e n () :@ l) z@(ZFunction a b) = do
+check' (EImplicit x e n () :@ l) z@(ZImplicit a b) = do
   e' <- checkFunction x e a b
-  applyCtxExpr (ELambda x e' n z :@ l)
+  applyCtxExpr (EImplicit x e' n z :@ l)
 check' (EMacro x e () :@ l) z@(ZFunction a b) = do
   e'' <- checkFunction x e a b
   applyCtxExpr (EMacro x e'' z :@ l)
@@ -362,7 +373,7 @@ synthesize' (ELambda x e n () :@ l) = do
   applyCtxExpr (ELambda x e' n (ZFunction alphaHat betaHat) :@ l)
 synthesize' (EImplicit x e n () :@ l) = do
   (e', alphaHat, betaHat) <- synthesizeFunction x e
-  applyCtxExpr (EImplicit x e' n (ZFunction alphaHat betaHat) :@ l)
+  applyCtxExpr (EImplicit x e' n (ZImplicit alphaHat betaHat) :@ l)
 synthesize' (EMacro x e () :@ l) = do
   (e', alphaHat, betaHat) <- synthesizeFunction x e
   applyCtxExpr (EMacro x e' (ZFunction alphaHat betaHat) :@ l)
@@ -371,14 +382,6 @@ synthesize' (ENative2 _ () :@ _) = bug Unreachable
 synthesize' (ENativeIO _ () :@ _) = bug Unreachable
 synthesize' (ESpecial () :@ _) = bug Unreachable
 -- ->E
-synthesize' (EApply e1@(EImplicit _ _ _ _ :@ _) e2 () :@ l) = do
-  e1' <- synthesize e1
-  e2' <- synthesize e2
-  withLocation l $
-    exprType e2' `subtype` ZUnit
-  case exprType e1' of
-    ZFunction _ c -> applyCtxExpr (EApply e1' e2' c :@ l)
-    _ -> bug Unreachable
 synthesize' (EApply e1 e2 () :@ l) = do
   e1' <- synthesize e1
   (e2', c) <- exprType e1' `applySynth` e2
@@ -400,6 +403,10 @@ synthesize' (EType m :@ l) = (:@ l) . EType <$> errorLocation l (synthesizeType 
       a' <- synthesizeType a
       b' <- synthesizeType b
       pure (ZFunction a' b')
+    synthesizeType (ZImplicit a b) = do
+      a' <- synthesizeType a
+      b' <- synthesizeType b
+      pure (ZImplicit a' b')
     synthesizeType (ZPair a b) = do
       a' <- synthesizeType a
       b' <- synthesizeType b
@@ -452,5 +459,6 @@ applySynth' (ZExistential alphaHat) e = do
 applySynth' (ZFunction a c) e = do
   e' <- e `check` a
   (e',) <$> applyCtxType c
+applySynth' (ZImplicit _ c) e = c `applySynth` e
 --
 applySynth' t e = throwError $ CannotApply t e

@@ -114,6 +114,7 @@ isWellFormed ZAny _ = True
 isWellFormed ZUnit _ = True
 isWellFormed ZSymbol _ = True
 isWellFormed (ZFunction a b) ctx = isWellFormed a ctx && isWellFormed b ctx
+isWellFormed (ZImplicit a b) ctx = isWellFormed a ctx && isWellFormed b ctx
 isWellFormed (ZPair a b) ctx = isWellFormed a ctx && isWellFormed b ctx
 isWellFormed (ZType _) _ = True
 isWellFormed (ZUniversal a) (Context (CUniversal b : _)) | a == b = True

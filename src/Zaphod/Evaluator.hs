@@ -105,26 +105,31 @@ evaluate expr = do
         _ -> bug Unreachable
     eval (EApply f x r :@ l) = do
       f' <- eval f
-      x' <- eval x
       setType r <$> case f' of
-        ELambda (Variable v) e env _ :@ _ ->
+        ELambda (Variable v) e env _ :@ _ -> do
+          x' <- eval x
           local (\(_, n) -> (M.insert v x' env, n)) . errorLocation l $ eval e
-        EImplicit (Variable v) e env (ZFunction i _) :@ _ -> do
+        EImplicit (Variable v) e env (ZImplicit i _) :@ _ -> do
           (a, b) <- bimapF (findOfType i) (findOfType i) ask
           case M.toList a ++ M.toList b of
-            [(_, s)] -> local (\(_, n) -> (M.insert v s env, n)) . errorLocation l $ eval e
+            [(_, s)] ->
+              local (\(_, n) -> (M.insert v s env, n)) $
+                eval (EApply (setLocation (location f) e) x r :@ l)
             [] -> throwError (NoMatches i)
             ss -> throwError (MultipleMatches i (snd <$> ss))
-        ENative1 (Native1 g) _ :@ _ ->
+        ENative1 (Native1 g) _ :@ _ -> do
+          x' <- eval x
           case maybeList x' of
             Just [a] -> errorLocation l . liftNative $ g a
             _ -> bug Unreachable
-        ENative2 (Native2 g) _ :@ _ ->
+        ENative2 (Native2 g) _ :@ _ -> do
+          x' <- eval x
           case maybeList x' of
             Just [a, b] -> errorLocation l . liftNative $ g a b
             _ -> bug Unreachable
-        ENativeIO (NativeIO g) _ :@ _ ->
-          case maybeList x of
+        ENativeIO (NativeIO g) _ :@ _ -> do
+          x' <- eval x
+          case maybeList x' of
             Just [] -> liftIO g
             _ -> bug Unreachable
         _ -> bug Unreachable
@@ -139,6 +144,7 @@ evaluate expr = do
     evalType (ZForall u@(Universal s) z) =
       ZForall u <$> local (first (M.insert s (EType (ZUniversal u) :@ ()))) (evalType z)
     evalType (ZFunction a b) = ZFunction <$> evalType a <*> evalType b
+    evalType (ZImplicit a b) = ZImplicit <$> evalType a <*> evalType b
     evalType (ZPair a b) = ZPair <$> evalType a <*> evalType b
     evalType (ZValue a) = unwrapType <$> eval a
     evalType (ZUntyped _) = bug Unreachable
@@ -155,6 +161,7 @@ analyzeType RU = pure ZUnit
 analyzeType x@(RS _) = ZUntyped . stripLocation <$> analyzeUntyped x
 analyzeType (RS "_forall" :. RS u :. z :. RU) = ZForall (Universal u) <$> analyzeType z
 analyzeType (RS "->" :. a :. b :. RU) = ZFunction <$> analyzeType a <*> analyzeType b
+analyzeType (RS "=>" :. a :. b :. RU) = ZImplicit <$> analyzeType a <*> analyzeType b
 analyzeType (RS "quote" :. x :. RU) =
   pure . ZUntyped $ EQuote (EType (quoteType x) :@ ()) () :@ ()
   where

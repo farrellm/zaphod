@@ -57,6 +57,7 @@ data ZType
   | ZExistential Existential
   | ZForall Universal ZType
   | ZFunction ZType ZType
+  | ZImplicit ZType ZType
   | ZSymbol
   | ZPair ZType ZType
   | ZValue (Typed ())
@@ -96,6 +97,7 @@ instance Render ZType where
   render (ZExistential e) = "∃" <> render e
   render (ZForall u e) = "∀" <> render u <> "." <> render e
   render (ZFunction a b) = render a <> " -> " <> render b
+  render (ZImplicit a b) = render a <> " => " <> render b
   render ZSymbol = "Symbol"
   render p@(ZPair l r) =
     case maybeList p of
