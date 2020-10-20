@@ -56,3 +56,54 @@
   (forall (a b c) (-> [(-> (cons b a) c) b]
                       (-> a c)))
   (lambda y (apply f (cons x y))))
+
+(defn (unsafe-head l)
+  (forall (a) (-> [(List a)] a))
+  (unsafe-coerce (cadr l)))
+
+(defn (unsafe-tail l)
+  (forall (a) (-> [(List a)] (List a)))
+  (unsafe-coerce (caddr l)))
+
+(defn (nat-prev i)
+  (-> [(Nat)] (Nat))
+  (if (top-eq i (Z))
+      i
+      (unsafe-coerce (cadr i))))
+
+(defn (unsafe-top-nth n l)
+  (forall (a) (-> [(Nat) Any] Any))
+  (if (top-eq n (Z))
+      (car l)
+      (unsafe-top-nth (nat-prev n) (cdr l))))
+
+(defn (top-map-index' f l i)
+  (-> [(-> [(Nat) Any] Any) Any (Nat)] Any)
+  (if (is-nil l)
+      (: () Any)
+      (cons (f i (car l))
+            (top-map-index' f (cdr l) (S i)))))
+
+(defn (top-map-index f l)
+  (-> [(-> [(Nat) Any] Any) Any] Any)
+  (top-map-index' f l (Z)))
+
+(defn (record' n ts c fs)
+  (-> [Symbol Any Symbol Any] Any)
+  (let ((mk-field (lambda (i f)
+                    ['def (car f)
+                          ['forall ts ['-> ['cons (cons n ts) ()] (cadr f)]]
+                          ['lambda '(r) ['unsafe-coerce ['unsafe-top-nth i '(cdr r)]]]])))
+    (cons 'begin
+          (cons ['data (cons n ts)
+                       (cons c (top-map cadr fs))]
+                (top-map-index mk-field fs))
+          )))
+
+(def record
+     (-> [(cons Symbol Any) (cons Symbol Any)] Any)
+     (macro d
+       (record' (fst (fst d))
+                (snd (fst d))
+                (fst (fst (snd d)))
+                (snd (fst (snd d))))))
