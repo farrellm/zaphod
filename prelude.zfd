@@ -1,9 +1,9 @@
-(data (Bool)
-      (False)
-      (True))
+(data Bool
+      False
+      True)
 
 (data (Maybe a)
-      (Nothing)
+      Nothing
       (Just a))
 
 (data (Either a b)
@@ -11,12 +11,12 @@
       (Right b))
 
 (data (List a)
-      (Nil)
+      Nil
       (Cons a (List a)))
 
-(data (Nat)
-      (Z)
-      (S (Nat)))
+(data Nat
+      Z
+      (S Nat))
 
 (defn (id x)
   (forall (a) (-> [a] a))
@@ -39,8 +39,8 @@
   (top-reverse' xs ()))
 
 (defn (not p)
-  (-> [(Bool)] (Bool))
-  (if p (False) (True)))
+  (-> [Bool] Bool)
+  (if p False True))
 
 (defn (unsafe-from-just m)
   (forall (a) (-> [(Maybe a)] a))
@@ -48,7 +48,7 @@
 
 (defn (maybe d f m)
   (forall (a b) (-> [b (-> [a] b) (Maybe a)] b))
-  (if (top-eq m (Nothing))
+  (if (top-eq m Nothing)
       d
       (f (unsafe-from-just m))))
 
@@ -66,27 +66,27 @@
   (unsafe-coerce (caddr l)))
 
 (defn (nat-prev i)
-  (-> [(Nat)] (Nat))
-  (if (top-eq i (Z))
+  (-> [Nat] Nat)
+  (if (top-eq i Z)
       i
       (unsafe-coerce (cadr i))))
 
 (defn (unsafe-top-nth n l)
-  (forall (a) (-> [(Nat) Any] Any))
-  (if (top-eq n (Z))
+  (forall (a) (-> [Nat Any] Any))
+  (if (top-eq n Z)
       (car l)
       (unsafe-top-nth (nat-prev n) (cdr l))))
 
 (defn (top-map-index' f l i)
-  (-> [(-> [(Nat) Any] Any) Any (Nat)] Any)
+  (-> [(-> [Nat Any] Any) Any Nat] Any)
   (if (is-nil l)
       (: () Any)
       (cons (f i (car l))
             (top-map-index' f (cdr l) (S i)))))
 
 (defn (top-map-index f l)
-  (-> [(-> [(Nat) Any] Any) Any] Any)
-  (top-map-index' f l (Z)))
+  (-> [(-> [Nat Any] Any) Any] Any)
+  (top-map-index' f l Z))
 
 (defn (record' n ts c fs)
   (-> [Symbol Any Symbol Any] Any)

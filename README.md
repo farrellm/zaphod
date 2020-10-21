@@ -95,19 +95,19 @@ Any     ;; universal return type
 
 ### ADTs
 ```scheme
-(data (Bool)
-      (True)
-      (False))
+(data Bool
+      True
+      False)
 
 (data (Maybe a)
-      (Nothing)
+      Nothing
       (Just a))
 
 (defn (not p)
-  (-> [(Bool)] (Bool))
+  (-> [Bool] Bool)
   (if p
-      (False)
-      (True)))
+      False
+      True))
 ```
 
 ## Why is Zaphod interesting?

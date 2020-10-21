@@ -134,8 +134,24 @@
   (-> [Any] Any)
   (top-map (lambda (_) (unsafe-gensym)) xs))
 
+(defn (const x)
+  (forall (a b) (-> [a] (-> [b] a)))
+  (lambda (_) x))
+
+(defn (constructor1 n c)
+  (-> [Any Any] Any)
+  (if (is-symbol c)
+      (: ['def c
+               n
+               ['unsafe-coerce ['quote c]]]
+         Any)
+      (let ((c' (cons (car c) (gen-syms (cdr c)))))
+        ['defn c'
+          ['-> (cons 'tuple (cdr c)) n]
+          ['unsafe-coerce (cons 'tuple (cons ['quote (car c')] (cdr c')))]])))
+
 (defn (constructor n xs c)
-  (-> [Symbol Any Any] Any)
+  (-> [Any Any Any] Any)
   (if (is-symbol c)
       (: ['def c
                (foralls xs (cons n xs))
@@ -146,18 +162,34 @@
           (foralls xs ['-> (cons 'tuple (cdr c)) (cons n xs)])
           ['unsafe-coerce (cons 'tuple (cons ['quote (car c')] (cdr c')))]])))
 
-(defn (data' n xs cs)
-  (-> [Symbol Any Any] Any)
+(defn (data1 n cs)
+  (-> [Any Any] Any)
   (cons
    'begin
    (cons
-    ['def n ['lambda xs [': (cons 'tuple (cons ['quote n] xs)) 'Type]]]
+    ['def n
+          'Type
+          ['quote n]]
+    (top-map (lambda (c) (constructor1 n c))
+             cs))))
+
+(defn (data' n xs cs)
+  (-> [Any Any Any] Any)
+  (cons
+   'begin
+   (cons
+    ['def n
+          ['-> (cons 'tuple (top-map (const 'Type) xs)) 'Type]
+          ['lambda xs [': (cons 'tuple (cons ['quote n] xs)) 'Type]]]
     (top-map (lambda (c) (constructor n xs c))
              cs))))
 
 (def data
-     (-> (cons (cons Symbol Any) Any) Any)
-     (macro d (data' (fst (fst d)) (cdar d) (cdr d))))
+     (-> (cons Any Any) Any)
+     (macro d
+       (if (is-symbol (car d))
+           (data1 (car d) (cdr d))
+           (data' (caar d) (cdar d) (cdr d)))))
 
 (defn (top-init xs)
   (forall (a) (-> [a] Any))
