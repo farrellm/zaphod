@@ -93,8 +93,18 @@ substitute :: ZType -> ZType -> ZType -> ZType
 substitute x y z | z == y = x
 substitute x y (ZForall beta b) = ZForall beta (substitute x y b)
 substitute x y (ZFunction a b) = ZFunction (substitute x y a) (substitute x y b)
+substitute x y (ZImplicit a b) = ZImplicit (substitute x y a) (substitute x y b)
 substitute x y (ZPair a b) = ZPair (substitute x y a) (substitute x y b)
+substitute x y (ZValue e) = ZValue (substituteExpr x y e)
+substitute _ _ t@(ZUntyped _) = bug (NotImplemented $ render t)
 substitute _ _ z = z
+
+substituteExpr :: ZType -> ZType -> Typed l -> Typed l
+substituteExpr _ _ e@(EUnit :@ _) = e
+substituteExpr _ _ e@(ESymbol _ ZSymbol :@ _) = e
+substituteExpr x y (EPair l r t :@ o) =
+  EPair (substituteExpr x y l) (substituteExpr x y r) (substitute x y t) :@ o
+substituteExpr _ _ e = bug (NotImplemented $ render e)
 
 solveExistential ::
   (MonadState CheckerState m, MonadError (CheckerException ()) m) => ZType -> Existential -> m ()
@@ -110,13 +120,13 @@ solveExistential z e = do
     go [] = bug $ MissingExistentialInContext e
 
 isWellFormed :: ZType -> Context -> Bool
+isWellFormed (ZType _) _ = True
 isWellFormed ZAny _ = True
 isWellFormed ZUnit _ = True
 isWellFormed ZSymbol _ = True
 isWellFormed (ZFunction a b) ctx = isWellFormed a ctx && isWellFormed b ctx
 isWellFormed (ZImplicit a b) ctx = isWellFormed a ctx && isWellFormed b ctx
 isWellFormed (ZPair a b) ctx = isWellFormed a ctx && isWellFormed b ctx
-isWellFormed (ZType _) _ = True
 isWellFormed (ZUniversal a) (Context (CUniversal b : _)) | a == b = True
 isWellFormed (ZExistential a) (Context (CUnsolved b : _)) | a == b = True
 isWellFormed (ZExistential a) (Context (CSolved b _ : _)) | a == b = True

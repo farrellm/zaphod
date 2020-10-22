@@ -106,10 +106,16 @@ isMonoType (ZFunction a b) = isMonoType a && isMonoType b
 isMonoType (ZPair a b) = isMonoType a && isMonoType b
 isMonoType (ZValue v) = isMonoTypeValue v
   where
-    isMonoTypeValue (ESymbol _ ZSymbol :@ _) = True
-    isMonoTypeValue (EPair l r _ :@ _) = isMonoTypeValue l && isMonoTypeValue r
     isMonoTypeValue (EType t :@ _) = isMonoType t
-    isMonoTypeValue _ = False
+    isMonoTypeValue (EUnit :@ _) = True
+    isMonoTypeValue (ESymbol _ t :@ _) = isMonoType t
+    isMonoTypeValue (ELambda _ h _ _ :@ _) = isMonoTypeValue h
+    isMonoTypeValue (EImplicit _ h _ _ :@ _) = isMonoTypeValue h
+    isMonoTypeValue (EApply f x _ :@ _) = isMonoTypeValue f && isMonoTypeValue x
+    isMonoTypeValue (EPair l r _ :@ _) = isMonoTypeValue l && isMonoTypeValue r
+    isMonoTypeValue (EAnnotation x _ :@ _) = isMonoTypeValue x
+    isMonoTypeValue (EQuote _ _ :@ _) = True
+    isMonoTypeValue e = bug (NotImplemented $ render e)
 isMonoType _ = False
 
 isDeeper :: (MonadState CheckerState m) => ZType -> Existential -> m Bool
@@ -157,7 +163,7 @@ synthesize a =
   logInfo ("syn " <> render a) $
     synthesize' a
 
-applySynth :: (MonadChecker l m) => ZType -> Untyped l -> m (Typed l, ZType)
+applySynth :: (MonadChecker l m) => ZType -> Untyped l -> m (ZType, Typed l, ZType)
 applySynth a b =
   logInfo ("app " <> render a <> " =>> " <> render b) $
     applySynth' a b
@@ -273,7 +279,6 @@ instantiateR' x alphaHat = do
     if isMonoType x
       then isDeeper x alphaHat
       else pure False
-  -- traceShowM d
   go d x
   where
     -- InstRSolve
@@ -384,8 +389,8 @@ synthesize' (ESpecial () :@ _) = bug Unreachable
 -- ->E
 synthesize' (EApply e1 e2 () :@ l) = do
   e1' <- synthesize e1
-  (e2', c) <- exprType e1' `applySynth` e2
-  applyCtxExpr (EApply e1' e2' c :@ l)
+  (ze1'', e2', c) <- exprType e1' `applySynth` e2
+  applyCtxExpr (EApply (setType ze1'' e1') e2' c :@ l)
 synthesize' (EPair l r () :@ loc) = do
   l' <- synthesize l
   r' <- synthesize r
@@ -438,7 +443,7 @@ synthesizeFunction x e = do
   context %= dropVar x
   pure (e', alphaHat, betaHat)
 
-applySynth' :: (MonadChecker l m) => ZType -> Untyped l -> m (Typed l, ZType)
+applySynth' :: (MonadChecker l m) => ZType -> Untyped l -> m (ZType, Typed l, ZType)
 -- ∀App
 applySynth' (ZForall alpha a) e = do
   alphaHat <- nextExtential
@@ -454,11 +459,18 @@ applySynth' (ZExistential alphaHat) e = do
   withLocation (location e) $
     solveExistential f alphaHat
   e' <- e `check` ZExistential alphaHat1
-  (e',) <$> applyCtxType (ZExistential alphaHat2)
+  f' <- applyCtxType f
+  c' <- applyCtxType (ZExistential alphaHat2)
+  pure (f', e', c')
 -- ->App
-applySynth' (ZFunction a c) e = do
+applySynth' f@(ZFunction a c) e = do
   e' <- e `check` a
-  (e',) <$> applyCtxType c
-applySynth' (ZImplicit _ c) e = c `applySynth` e
+  f' <- applyCtxType f
+  c' <- applyCtxType c
+  pure (f', e', c')
+applySynth' (ZImplicit a c) e = do
+  (f', e', c') <- c `applySynth` e
+  a' <- applyCtxType a
+  pure (ZImplicit a' f', e', c')
 --
 applySynth' t e = throwError $ CannotApply t e

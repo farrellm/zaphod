@@ -2,6 +2,7 @@
 
 module Prelude
   ( module X,
+    trace',
     traceM',
   )
 where
@@ -12,6 +13,9 @@ import Relude.Extra.Bifunctor as X (bimapF)
 
 debug :: Bool
 debug = False
+
+trace' :: Text -> a -> a
+trace' t = trace (toString t)
 
 traceM' :: Applicative f => Text -> f ()
 traceM' x = when debug . traceM $ toString x

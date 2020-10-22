@@ -8,6 +8,7 @@ import Zaphod.Types.Wrapper (Existential, Variable)
 
 data ZaphodBug
   = Unreachable
+  | NotImplemented Text
   | MissingExistential Existential
   deriving (Show)
 

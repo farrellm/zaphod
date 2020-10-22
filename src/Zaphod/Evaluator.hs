@@ -32,22 +32,6 @@ type MonadEvaluator l m =
     MonadIO m
   )
 
-setType :: ZType -> Typed l -> Typed l
-setType _ (EUnit :@ l) = EUnit :@ l
-setType _ (EType z :@ l) = EType z :@ l
-setType z (ESymbol s _ :@ l) = ESymbol s z :@ l
-setType z (ELambda x e env _ :@ l) = ELambda x e env z :@ l
-setType z (EImplicit x e env _ :@ l) = EImplicit x e env z :@ l
-setType z (EMacro x e _ :@ l) = EMacro x e z :@ l
-setType z (EApply f xs _ :@ l) = EApply f xs z :@ l
-setType z (EPair x y _ :@ l) = EPair x y z :@ l
-setType z (EAnnotation e _ :@ l) = EAnnotation e z :@ l
-setType z (EQuote q _ :@ l) = EQuote q z :@ l
-setType z (ENative1 n _ :@ l) = ENative1 n z :@ l
-setType z (ENative2 n _ :@ l) = ENative2 n z :@ l
-setType z (ENativeIO n _ :@ l) = ENativeIO n z :@ l
-setType z (ESpecial _ :@ l) = ESpecial z :@ l
-
 liftChecker ::
   (MonadError (EvaluatorException l) m) =>
   (a -> ExceptT (CheckerException l) m b) ->
@@ -75,11 +59,11 @@ evaluate expr = do
       ) =>
       Typed k ->
       m (Typed ())
-    eval (ESymbol s _ :@ _) = do
+    eval (ESymbol s z :@ _) = do
       (m, n) <- bimapF (!? s) (!? s) ask
       pure $ case (m, n) of
-        (Just v, _) -> v
-        (_, Just v) -> v
+        (Just v, _) -> setType z v
+        (_, Just v) -> setType z v
         (_, _) -> bug Unreachable
     eval (EAnnotation v z :@ _) = setType z <$> eval v
     eval (EApply (ESymbol "if" _ :@ _) xs _ :@ _) =

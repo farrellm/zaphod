@@ -232,3 +232,19 @@ instance Render (Typed l) where
 unwrapType :: Typed l -> ZType
 unwrapType (EType z :@ _) = z
 unwrapType e = ZValue $ stripLocation e
+
+setType :: ZType -> Typed l -> Typed l
+setType _ (EUnit :@ l) = EUnit :@ l
+setType _ (EType z :@ l) = EType z :@ l
+setType z (ESymbol s _ :@ l) = ESymbol s z :@ l
+setType z (ELambda x e env _ :@ l) = ELambda x e env z :@ l
+setType z (EImplicit x e env _ :@ l) = EImplicit x e env z :@ l
+setType z (EMacro x e _ :@ l) = EMacro x e z :@ l
+setType z (EApply f xs _ :@ l) = EApply f xs z :@ l
+setType z (EPair x y _ :@ l) = EPair x y z :@ l
+setType z (EAnnotation e _ :@ l) = EAnnotation e z :@ l
+setType z (EQuote q _ :@ l) = EQuote q z :@ l
+setType z (ENative1 n _ :@ l) = ENative1 n z :@ l
+setType z (ENative2 n _ :@ l) = ENative2 n z :@ l
+setType z (ENativeIO n _ :@ l) = ENativeIO n z :@ l
+setType z (ESpecial _ :@ l) = ESpecial z :@ l

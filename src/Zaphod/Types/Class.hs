@@ -32,3 +32,7 @@ instance Render a => Render [a] where
 instance (Render a, Render b) => Render (a, b) where
   render (l, r) = "(" <> render l <> " . " <> render r <> ")"
   {-# INLINE render #-}
+
+instance (Render a, Render b, Render c) => Render (a, b, c) where
+  render (a, b, c) = "(" <> render a <> " . " <> render b <> " . " <> render c <> ")"
+  {-# INLINE render #-}
