@@ -138,7 +138,10 @@ evaluateType :: (MonadEvaluator l m) => Untyped l -> m ZType
 evaluateType u = do
   env <- ask
   t <- evaluatingStateT (emptyCheckerState env) $ liftChecker (check u) (ZType 0)
-  unwrapType <$> evaluate t
+  setExprType . unwrapType <$> evaluate t
+  where
+    setExprType (ZValue e) = ZValue (setType (ZType 0) e)
+    setExprType z = z
 
 analyzeType :: (MonadEvaluator l m) => Raw l -> m ZType
 analyzeType RU = pure ZUnit

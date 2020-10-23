@@ -44,7 +44,7 @@ zTuple3 :: ZType -> ZType -> ZType -> ZType
 zTuple3 x y z = ZPair x $ zTuple2 y z
 
 zBool :: ZType
-zBool = ZValue (ESymbol "Bool" ZSymbol :@ ())
+zBool = ZValue (ESymbol "Bool" (ZType 0) :@ ())
 
 zTrue :: Typed ()
 zTrue = ESymbol "True" zBool :@ ()
