@@ -221,7 +221,7 @@ subtype' ZSymbol ZSymbol = pass
 -- <:Type
 subtype' (ZType m) (ZType n) | m == n = pass
 -- <:Value
-subtype' (ZValue (ESymbol a ZSymbol :@ _)) (ZValue (ESymbol b ZSymbol :@ _)) | a == b = pass
+subtype' (ZValue a) (ZValue b) | a == b = pass
 --
 subtype' a b = throwError $ TypeError a b ()
 
