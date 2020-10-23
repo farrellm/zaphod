@@ -211,7 +211,8 @@ evaluateRaw m x = do
         Just (n, t) -> do
           t' <- evaluateRawType t
           context %= (CVariable (Variable n) t' <:)
-          evaluate =<< liftChecker synthesize =<< analyzeUntyped [":", x, t]
+          r <- evaluate =<< liftChecker (flip check t') =<< analyzeUntyped x
+          pure $ setType t' r
         Nothing -> evaluate =<< liftChecker synthesize =<< analyzeUntyped x
   pure (first universalize x')
   where
