@@ -101,7 +101,7 @@ substitute _ _ z = z
 
 substituteExpr :: ZType -> ZType -> Typed l -> Typed l
 substituteExpr _ _ e@(EUnit :@ _) = e
-substituteExpr _ _ e@(ESymbol _ ZSymbol :@ _) = e
+substituteExpr x y (ESymbol s t :@ l) = ESymbol s (substitute x y t) :@ l
 substituteExpr x y (EPair l r t :@ o) =
   EPair (substituteExpr x y l) (substituteExpr x y r) (substitute x y t) :@ o
 substituteExpr _ _ e = bug (NotImplemented $ render e)
