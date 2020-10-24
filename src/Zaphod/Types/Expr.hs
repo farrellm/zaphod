@@ -195,7 +195,7 @@ instance Render (Untyped l) where
   render (EUnit :@ _) = "()"
   render (ESymbol t () :@ _) = render t
   render (ELambda _ _ _ () :@ _) = "<lambda>"
-  render (EImplicit x e _ () :@ _) = "(implicit " <> render x <> " " <> render e <> ")"
+  render (EImplicit _ _ _ () :@ _) = "<implicit>"
   render (EMacro x e () :@ _) = "(macro " <> render x <> " " <> render e <> ")"
   render p@(EPair l r () :@ _) =
     case maybeList p of
@@ -215,7 +215,7 @@ instance Render (Typed l) where
   render (EUnit :@ _) = "() : ()"
   render (ESymbol t z :@ _) = render t <> " : " <> render z
   render (ELambda _ _ _ z :@ _) = "<lambda> : " <> render z
-  render (EImplicit x e _ z :@ _) = "(implicit " <> render x <> " " <> render e <> ") : " <> render z
+  render (EImplicit _ _ _ z :@ _) = "<implicit> : " <> render z
   render (EMacro x e z :@ _) = "(macro " <> render x <> " " <> render e <> ") : " <> render z
   render p@(EPair l r z :@ _) =
     case maybeList $ stripType p of
