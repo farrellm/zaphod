@@ -42,6 +42,14 @@
   (-> [Bool] Bool)
   (if p False True))
 
+(defn (and x y)
+  (-> [Bool Bool] Bool)
+  (if x y False))
+
+(defn (or x y)
+  (-> [Bool Bool] Bool)
+  (if x True y))
+
 (defn (unsafe-from-just m)
   (forall (a) (-> [(Maybe a)] a))
   (unsafe-coerce (cadr m)))
@@ -88,17 +96,52 @@
   (-> [(-> [Nat Any] Any) Any] Any)
   (top-map-index' f l Z))
 
-(defn (record' n ts c fs)
-  (-> [Symbol Any Symbol Any] Any)
+(defn (alist-lookup k l)
+  (-> [Any Any] Any)
+  (if (top-eq k (caar l))
+      (cdar l)
+      (alist-lookup k (cdr l))))
+
+(defn (top-zip xs ys)
+  (-> [Any Any] Any)
+  (if (or (is-nil xs) (is-nil ys))
+      (: () Any)
+      (cons (cons (car xs) (car ys))
+            (top-zip (cdr xs) (cdr ys)))))
+
+(defn (apply-alist' f ns l)
+  (-> [Any Any Any] Any)
+  ['apply f (cons 'tuple
+                  (top-map (lambda (n)
+                             (car (alist-lookup n l)))
+                           ns))])
+
+(defmacro (apply-alist f ns l)
+  (-> [Any Any Any] Any)
+  (apply-alist' f ns l))
+
+(defn (record' n ts c fs ks)
+  (-> [Symbol Any Symbol Any Any] Any)
   (let ((mk-field (lambda (i f)
                     ['def (car f)
                           ['forall ts ['-> ['cons (cons n ts) ()] (cadr f)]]
-                          ['lambda '(r) ['unsafe-coerce ['unsafe-top-nth i '(cdr r)]]]])))
-    (cons 'begin
-          (cons ['data (cons n ts)
-                       (cons c (top-map cadr fs))]
-                (top-map-index mk-field fs))
-          )))
+                          ['lambda '(r) ['unsafe-coerce ['unsafe-top-nth i '(cdr r)]]]]))
+        (xs (top-map cadr fs))
+        (g (symbol-concat '_ c ))
+        (l (unsafe-gensym))
+        (ks' (if (is-nil ks)
+                 (top-map (lambda (f) ['quote (car f)]) fs)
+                 ks)))
+    (cons
+     'begin
+     (cons
+      ['data (cons n ts)
+             (cons g xs)]
+      (cons
+       ['defmacro (cons c l)
+         ['-> 'Any 'Any]
+         ['apply-alist' ['quote g] (cons 'tuple ks') l]]
+       (top-map-index mk-field fs))))))
 
 (def record
      (-> [(cons Symbol Any) (cons Symbol Any)] Any)
@@ -106,4 +149,53 @@
        (record' (fst (fst d))
                 (snd (fst d))
                 (fst (fst (snd d)))
-                (snd (fst (snd d))))))
+                (snd (fst (snd d)))
+                ())))
+
+(defn (class' n ts fs)
+  (-> [Symbol Any Any] Any)
+  (let ((gs (unsafe-gensyms ts))
+        (gm (top-zip (top-map car fs) gs)))
+    (cons
+     'begin
+     (cons
+      (record' n
+               ts
+               (symbol-concat 'Mk n)
+               (top-map (lambda (f)
+                          (cons (alist-lookup (car f) gm)
+                                (cdr f)))
+                        fs)
+               (top-map (lambda (f) ['quote (car f)]) fs))
+
+      (top-map
+       (lambda (f)
+         (let ((r (unsafe-gensym))
+               (ps (unsafe-gensyms (cdadr f))))
+           ['def (car f)
+                 ['forall ts
+                          ['=> (cons n ts)
+                               (cadr f)]]
+                 ['implicit r ['lambda ps (cons [(alist-lookup (car f) gm) r]
+                                                ps)]]]))
+       fs)))))
+
+(def class
+     (-> (cons (cons Symbol Any) Any) Any)
+     (macro d
+       (class' (fst (fst d)) (cdar d) (cdr d))))
+
+(defn (instance' n t fs)
+  (-> [Symbol Any Any] Any)
+  ['def
+   (unsafe-gensym)
+   [n t]
+   (cons (symbol-concat 'Mk n)
+         fs)])
+
+(def instance
+     (-> (cons [Symbol Any] Any) Any)
+     (macro d
+       (instance' (fst (fst d))
+                  (fst (snd (fst d)))
+                  (cdr d))))

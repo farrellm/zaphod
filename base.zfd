@@ -13,9 +13,12 @@
 
 (def caaar (-> Any Any) (_lambda x (car (car (car (car x))))))
 (def caadr (-> Any Any) (_lambda x (car (car (cdr (car x))))))
+(def cadar (-> Any Any) (_lambda x (car (cdr (car (car x))))))
+(def cdaar (-> Any Any) (_lambda x (cdr (car (car (car x))))))
 (def caddr (-> Any Any) (_lambda x (car (cdr (cdr (car x))))))
 (def cdadr (-> Any Any) (_lambda x (cdr (car (cdr (car x))))))
 (def cddar (-> Any Any) (_lambda x (cdr (cdr (car (car x))))))
+(def cdddr (-> Any Any) (_lambda x (cdr (cdr (cdr (car x))))))
 
 (def tuple'
      (-> Any Any)
@@ -130,7 +133,7 @@
       (: e Any)
       ['forall xs e]))
 
-(defn (gen-syms xs)
+(defn (unsafe-gensyms xs)
   (-> [Any] Any)
   (top-map (lambda (_) (unsafe-gensym)) xs))
 
@@ -145,7 +148,7 @@
                n
                ['unsafe-coerce ['quote c]]]
          Any)
-      (let ((c' (cons (car c) (gen-syms (cdr c)))))
+      (let ((c' (cons (car c) (unsafe-gensyms (cdr c)))))
         ['defn c'
           ['-> (cons 'tuple (cdr c)) n]
           ['unsafe-coerce (cons 'tuple (cons ['quote (car c')] (cdr c')))]])))
@@ -157,7 +160,7 @@
                (foralls xs (cons n xs))
                ['unsafe-coerce ['quote c]]]
          Any)
-      (let ((c' (cons (car c) (gen-syms (cdr c)))))
+      (let ((c' (cons (car c) (unsafe-gensyms (cdr c)))))
         ['defn c'
           (foralls xs ['-> (cons 'tuple (cdr c)) (cons n xs)])
           ['unsafe-coerce (cons 'tuple (cons ['quote (car c')] (cdr c')))]])))
