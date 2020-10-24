@@ -11,7 +11,7 @@ where
 import Control.Concurrent.MVar (modifyMVar)
 import qualified Data.Map as M
 import System.IO.Unsafe (unsafePerformIO)
-import Zaphod.Types
+import Zaphod.Types hiding (getSymbol)
 
 gensymRef :: MVar Int
 {-# NOINLINE gensymRef #-}
@@ -70,6 +70,7 @@ baseEnvironment =
       ("is-symbol", ENative1 (Native1 $ pure . isSymbol) zPred :@ ()),
       ("is-pair", ENative1 (Native1 $ pure . isPair) zPred :@ ()),
       ("symbol-eq", ENative2 (Native2 $ \x y -> pure $ stripEq x y) zSymbolEq :@ ()),
+      ("symbol-concat", ENative2 (Native2 symbolConcat) zSymbolConcat :@ ()),
       ("top-eq", ENative2 (Native2 $ \x y -> pure $ stripEq x y) zAnyEq :@ ()),
       ("unsafe-gensym", ENativeIO (NativeIO unsafeGensym) zUnsafeGensym :@ ()),
       -- Special forms
@@ -90,6 +91,7 @@ baseEnvironment =
     --
     zPred = ZForall a (ZFunction (zTuple1 za) zBool)
     zSymbolEq = ZFunction (zTuple2 ZSymbol ZSymbol) zBool
+    zSymbolConcat = ZFunction (zTuple2 ZSymbol ZSymbol) ZSymbol
     zAnyEq = ZForall a . ZForall b $ ZFunction (zTuple2 za zb) zBool
     --
     zcons l r = (:@ ()) . EType <$> (ZPair <$> getType "zcons" l <*> getType "zcons" r)
@@ -100,6 +102,9 @@ baseEnvironment =
     isSymbol _ = zFalse
     isPair (EPair _ _ _ :@ _) = zTrue
     isPair _ = zFalse
+    symbolConcat x y = do
+      s <- liftA2 (<>) (getSymbol "symbol-concat" x) (getSymbol "symbol-concat" y)
+      pure (ESymbol s ZSymbol :@ ())
     toZBool True = zTrue
     toZBool False = zFalse
     stripEq x y = toZBool (stripType x == stripType y)
@@ -112,3 +117,7 @@ getType n e = throwError $ TypeMismatch n (stripLocation e) "Type"
 getPair :: Text -> Typed l -> Either NativeException (Typed l, Typed l)
 getPair _ (EPair l r _ :@ _) = pure (l, r)
 getPair n e = throwError $ TypeMismatch n (stripLocation e) "Pair"
+
+getSymbol :: Text -> Typed l -> Either NativeException Symbol
+getSymbol _ (ESymbol s _ :@ _) = pure s
+getSymbol n e = throwError $ TypeMismatch n (stripLocation e) "Symbol"

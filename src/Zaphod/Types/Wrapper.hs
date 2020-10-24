@@ -5,7 +5,7 @@ module Zaphod.Types.Wrapper where
 import Zaphod.Types.Class
 
 newtype Symbol = Symbol {getSymbol :: Text}
-  deriving (Show, Eq, Ord, IsString)
+  deriving (Show, Eq, Ord, IsString, Semigroup)
 
 instance Render Symbol where
   render = getSymbol
