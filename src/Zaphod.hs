@@ -57,6 +57,12 @@ printError err =
           )
         printLocation l
       _ -> print (stripLocation c)
+    (InvalidLambda r) -> do
+      putTextLn ("Invalid lambda: " <> render r)
+      printLocation (location r)
+    (InvalidMacro r) -> do
+      putTextLn ("Invalid macro: " <> render r)
+      printLocation (location r)
   where
     printLocation (Just l) = putTextLn ("at " <> show l)
     printLocation Nothing = pass

@@ -99,7 +99,7 @@ substitute x y (ZValue e) = ZValue (substituteExpr x y e)
 substitute _ _ t@(ZUntyped _) = bug (NotImplemented $ render t)
 substitute _ _ z = z
 
-substituteExpr :: ZType -> ZType -> Typed l -> Typed l
+substituteExpr :: (Monoid l) => ZType -> ZType -> Typed l -> Typed l
 substituteExpr _ _ e@(EUnit :@ _) = e
 substituteExpr x y (ESymbol s t :@ l) = ESymbol s (substitute x y t) :@ l
 substituteExpr x y (EPair l r t :@ o) =

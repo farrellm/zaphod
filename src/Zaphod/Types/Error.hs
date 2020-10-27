@@ -22,6 +22,8 @@ data EvaluatorException l
   | BadBegin (Raw l)
   | NativeException l NativeException
   | CheckerException (CheckerException l)
+  | InvalidLambda (Raw l)
+  | InvalidMacro (Raw l)
   deriving (Show, Functor)
 
 data CheckerException l

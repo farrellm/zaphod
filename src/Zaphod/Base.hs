@@ -77,13 +77,13 @@ baseEnvironment =
       ("if", ESpecial zIf :@ ()),
       ("apply", ESpecial zApply :@ ()),
       -- bypass type checker
-      ("unsafe-coerce", ENative1 (Native1 $ pure . id) zUnsafeCoerce :@ ())
+      ("unsafe-coerce", ENative1 (Native1 pure) zUnsafeCoerce :@ ())
     ]
   where
     zCons = ZForall a . ZForall b $ ZFunction (zTuple2 za zb) (ZPair za zb)
     zFst = ZForall a . ZForall b $ ZFunction (zTuple1 (ZPair za zb)) za
     zSnd = ZForall a . ZForall b $ ZFunction (zTuple1 (ZPair za zb)) zb
-    zZCons = ZFunction (zTuple2 (ZType 0) (ZType 0)) (ZType 0)
+    zZCons = ZForall a . ZForall b $ ZFunction (zTuple2 za zb) (ZType 0)
     zIf = ZForall a $ ZFunction (zTuple3 zBool za za) za
     zApply = ZForall a . ZForall b $ ZFunction (zTuple2 (ZFunction za zb) za) zb
     zUnsafeCoerce = ZForall a . ZForall b $ ZFunction (zTuple1 za) zb

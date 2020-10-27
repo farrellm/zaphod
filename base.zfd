@@ -1,81 +1,37 @@
 (def car
-     (-> Any Any)
+     (-> (cons Any ()) Any)
      (unsafe-coerce fst))
 
 (def cdr
-     (-> Any Any)
+     (-> (cons Any ()) Any)
      (unsafe-coerce snd))
 
-(def caar (-> Any Any) (_lambda x (car (car (car x)))))
-(def cdar (-> Any Any) (_lambda x (cdr (car (car x)))))
-(def cadr (-> Any Any) (_lambda x (car (cdr (car x)))))
-(def cddr (-> Any Any) (_lambda x (cdr (cdr (car x)))))
-
-(def caaar (-> Any Any) (_lambda x (car (car (car (car x))))))
-(def caadr (-> Any Any) (_lambda x (car (car (cdr (car x))))))
-(def cadar (-> Any Any) (_lambda x (car (cdr (car (car x))))))
-(def cdaar (-> Any Any) (_lambda x (cdr (car (car (car x))))))
-(def caddr (-> Any Any) (_lambda x (car (cdr (cdr (car x))))))
-(def cdadr (-> Any Any) (_lambda x (cdr (car (cdr (car x))))))
-(def cddar (-> Any Any) (_lambda x (cdr (cdr (car (car x))))))
-(def cdddr (-> Any Any) (_lambda x (cdr (cdr (cdr (car x))))))
-
 (def tuple'
-     (-> Any Any)
-     (_lambda t
+     (-> (cons Any ()) Any)
+     (lambda (t)
        (if (is-nil t) (: () Any)
            (cons 'cons
                  (cons (car t)
-                       (cons (apply tuple' (cdr t))
+                       (cons (tuple' (cdr t))
                              ()))))))
 
 (def tuple
      (-> Any Any)
-     (_macro t (apply tuple' t)))
+     (macro t (tuple' t)))
 
-(def let1'
-     (-> Any Any)
-     (_lambda x
-       ['apply
-        ['_lambda (car x) (caddr x)]
-        (cadr x)]))
+(def caar (-> [Any] Any) (lambda (x) (car (car x))))
+(def cdar (-> [Any] Any) (lambda (x) (cdr (car x))))
+(def cadr (-> [Any] Any) (lambda (x) (car (cdr x))))
+(def cddr (-> [Any] Any) (lambda (x) (cdr (cdr x))))
 
-(def let1
-     (-> [Symbol Any Any] Any)
-     (_macro x (apply let1' x)))
-
-(def lambda'
-     (-> Any Any)
-     (_lambda l
-       ['apply
-        (cons '_lambda
-              (cons (caadr l)
-                    (if (is-nil (cdadr l))
-                        (cddr l)
-                        [(apply lambda' (cons ['snd (car l)]
-                                              (cons (cdadr l)
-                                                    (cddr l))))])))
-        ['fst (car l)]]))
-
-(def lambda
-     (-> Any Any)
-     (_macro l
-       (if (is-nil (car l))
-           (: (cons '_lambda
-                    (cons (unsafe-gensym) (cdr l)))
-              Any)
-           (if (is-symbol (car l))
-               (: (cons '_lambda l) Any)
-               (let1 v (unsafe-gensym)
-                     ['_lambda v (apply lambda' (cons v l))])))))
-
-(def macro
-     (-> Any Any)
-     (_macro l
-       (if (is-symbol (car l))
-           (: (cons '_macro l) Any)
-           (let1 v (unsafe-gensym)
-                 ['_macro v (apply lambda' (cons v l))]))))
+(def caaar (-> [Any] Any) (lambda (x) (car (car (car x)))))
+(def caadr (-> [Any] Any) (lambda (x) (car (car (cdr x)))))
+(def cadar (-> [Any] Any) (lambda (x) (car (cdr (car x)))))
+(def cdaar (-> [Any] Any) (lambda (x) (cdr (car (car x)))))
+(def caddr (-> [Any] Any) (lambda (x) (car (cdr (cdr x)))))
+(def cdadr (-> [Any] Any) (lambda (x) (cdr (car (cdr x)))))
+(def cddar (-> [Any] Any) (lambda (x) (cdr (cdr (car x)))))
+(def cdddr (-> [Any] Any) (lambda (x) (cdr (cdr (cdr x)))))
 
 (def defn
      (-> [(cons Symbol Any) Type Any] Any)
