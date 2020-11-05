@@ -95,27 +95,42 @@ substitute x y (ZForall beta b) = ZForall beta (substitute x y b)
 substitute x y (ZFunction a b) = ZFunction (substitute x y a) (substitute x y b)
 substitute x y (ZImplicit a b) = ZImplicit (substitute x y a) (substitute x y b)
 substitute x y (ZPair a b) = ZPair (substitute x y a) (substitute x y b)
-substitute x y (ZValue e) = ZValue (substituteExpr x y e)
+substitute x y (ZValue e) = ZValue (substituteValue x y e)
 substitute _ _ t@(ZUntyped _) = bug (NotImplemented $ render t)
-substitute _ _ z = z
+substitute _ _ z@ZUnit = z
+substitute _ _ z@ZSymbol = z
+substitute _ _ z@ZAny = z
+substitute _ _ z@(ZType _) = z
+substitute _ _ z@(ZUniversal _) = z
+substitute _ _ z@(ZExistential _) = z
 
-substituteExpr :: (Monoid l) => ZType -> ZType -> Typed l -> Typed l
-substituteExpr _ _ e@(EUnit :@ _) = e
-substituteExpr x y (ESymbol s t :@ l) = ESymbol s (substitute x y t) :@ l
-substituteExpr x y (EPair l r t :@ o) =
-  EPair (substituteExpr x y l) (substituteExpr x y r) (substitute x y t) :@ o
-substituteExpr _ _ e = bug (NotImplemented $ render e)
+substituteValue :: (Monoid l) => ZType -> ZType -> Typed l -> Typed l
+substituteValue _ _ e@(EUnit :@ _) = e
+substituteValue x y (ESymbol s t :@ l) = ESymbol s (substitute x y t) :@ l
+substituteValue x y (EPair l r t :@ o) =
+  EPair
+    (substituteValue x y l)
+    (substituteValue x y r)
+    (substitute x y t)
+    :@ o
+substituteValue _ _ e = bug (NotImplemented $ render e)
 
 solveExistential ::
-  (MonadState CheckerState m, MonadError (CheckerException ()) m) => ZType -> Existential -> m ()
+  (MonadState CheckerState m, MonadError (CheckerException ()) m) =>
+  ZType ->
+  Existential ->
+  m ()
 solveExistential z e = do
   (Context cs) <- use context
   context <~ Context <$> go cs
   where
     go (CUnsolved f : rs) | e == f = pure $ CSolved f z : rs
-    go (CSolved f y : _) | e == f = throwError $ ExistentialAlreadySolved z f y ()
-    go (CSolved f q : rs) = (CSolved f ((z `substitute` ZExistential e) q) :) <$> go rs
-    go (CVariable x q : rs) = (CVariable x ((z `substitute` ZExistential e) q) :) <$> go rs
+    go (CSolved f y : _)
+      | e == f = throwError $ ExistentialAlreadySolved z f y ()
+    go (CSolved f q : rs) =
+      (CSolved f ((z `substitute` ZExistential e) q) :) <$> go rs
+    go (CVariable x q : rs) =
+      (CVariable x ((z `substitute` ZExistential e) q) :) <$> go rs
     go (r : rs) = (r :) <$> go rs
     go [] = bug $ MissingExistentialInContext e
 

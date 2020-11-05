@@ -248,6 +248,7 @@ unwrapType e = ZValue $ stripLocation e
 
 unwrapUntyped :: ZType -> Untyped ()
 unwrapUntyped (ZUntyped e) = e
+unwrapUntyped (ZValue e) = stripType e
 unwrapUntyped z = EType z :@ ()
 
 setType :: ZType -> Typed l -> Typed l

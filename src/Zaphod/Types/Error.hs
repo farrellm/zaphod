@@ -30,6 +30,7 @@ data CheckerException l
   = ArgumentMissmatch [Variable] ZType
   | CannotApply ZType (Untyped l)
   | TypeError ZType ZType l
+  | NotSubtype ZType ZType l
   | UndefinedVariable Variable
   | ExistentialAlreadySolved ZType Existential ZType l
   deriving (Show, Functor)

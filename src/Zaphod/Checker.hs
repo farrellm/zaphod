@@ -102,6 +102,7 @@ isMonoType (ZUniversal _) = True
 isMonoType (ZExistential _) = True
 isMonoType (ZType _) = True
 isMonoType (ZFunction a b) = isMonoType a && isMonoType b
+isMonoType (ZImplicit a b) = isMonoType a && isMonoType b
 isMonoType (ZPair a b) = isMonoType a && isMonoType b
 isMonoType (ZValue v) = isMonoTypeValue v
   where
@@ -117,7 +118,8 @@ isMonoType (ZValue v) = isMonoTypeValue v
     isMonoTypeValue (EAnnotation x _ :@ _) = isMonoTypeValue x
     isMonoTypeValue (EQuote _ _ :@ _) = True
     isMonoTypeValue e = bug (NotImplemented $ render e)
-isMonoType _ = False
+isMonoType (ZForall _ _) = False
+isMonoType (ZUntyped _) = bug Unreachable
 
 isDeeper :: (MonadState CheckerState m) => ZType -> Existential -> m Bool
 isDeeper tau alphaHat = do
@@ -224,7 +226,7 @@ subtype' (ZType m) (ZType n) | m == n = pass
 -- <:Value
 subtype' (ZValue a) (ZValue b) | a == b = pass
 --
-subtype' a b = throwError $ TypeError a b ()
+subtype' a b = throwError $ NotSubtype a b ()
 
 instantiateL' :: (MonadChecker () m) => Existential -> ZType -> m ()
 instantiateL' alphaHat x = do
