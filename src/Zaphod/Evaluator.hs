@@ -45,6 +45,19 @@ liftChecker f x = do
 liftNative :: (MonadError (EvaluatorException ()) m) => Either NativeException a -> m a
 liftNative = liftEither . first (NativeException ())
 
+isSubtype ::
+  (MonadReader Environment m, MonadError (EvaluatorException ()) m) =>
+  ZType ->
+  ZType ->
+  m Bool
+isSubtype a b = do
+  env <- ask
+  e <- runExceptT (evaluatingStateT (emptyCheckerState env) $ subtype a b)
+  case e of
+    Right () -> pure True
+    Left NotSubtype {} -> pure False
+    Left err -> throwError (CheckerException err)
+
 evaluate :: (MonadEvaluator l m) => Typed l -> m (Typed ())
 evaluate expr = do
   env <- ask
@@ -89,7 +102,9 @@ evaluate expr = do
                 $ eval e
             Nothing -> bug Unreachable
         EImplicit (Variable v) e env (ZImplicit i _) :@ _ -> do
-          (a, b) <- bimapF (findOfType i) (findOfType i) ask
+          (lcl, gbl) <- ask
+          a <- errorLocation l $ findOfType i lcl
+          b <- errorLocation l $ findOfType i gbl
           case M.toList a ++ M.toList b of
             [(_, s)] ->
               local (\(_, n) -> (M.insert v s env, n)) $
@@ -120,7 +135,9 @@ evaluate expr = do
             . errorLocation l
             $ eval e
         EImplicit (Variable v) e env (ZImplicit i _) :@ _ -> do
-          (a, b) <- bimapF (findOfType i) (findOfType i) ask
+          (lcl, gbl) <- ask
+          a <- errorLocation l $ findOfType i lcl
+          b <- errorLocation l $ findOfType i gbl
           case M.toList a ++ M.toList b of
             [(_, s)] ->
               local (\(_, n) -> (M.insert v s env, n)) $
@@ -158,7 +175,10 @@ evaluate expr = do
     evalType (ZUntyped _) = bug Unreachable
     evalType z = pure z
 
-    findOfType z = M.filter ((z ==) . exprType)
+    findOfType z env = do
+      (lcl, gbl) <- ask
+      usingReaderT (M.union lcl gbl) $ do
+        M.fromList <$> filterM (isSubtype z . exprType . snd) (M.toList env)
 
     insertVar env (Variable v, x) = M.insert v x env
 

@@ -3,7 +3,7 @@
 {-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Zaphod.Checker (check, synthesize) where
+module Zaphod.Checker (check, synthesize, subtype) where
 
 import Control.Monad.Except (runExcept)
 import qualified Data.Text as T
