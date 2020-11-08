@@ -42,10 +42,12 @@ errorLocation a x = do
     Left err -> throwError (a <$ err)
     Right res -> pure res
 
-data Loc' = Loc SourcePos SourcePos
+data Loc = Loc SourcePos SourcePos
   deriving (Show)
 
-instance Semigroup Loc' where
+instance Semigroup Loc where
   Loc a _ <> Loc _ b = Loc a b
 
-type Loc = Maybe Loc'
+instance Location Loc where
+  getBegin (Loc a _) = Loc a a
+  getEnd (Loc _ b) = Loc b b

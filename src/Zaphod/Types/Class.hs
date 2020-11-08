@@ -14,6 +14,10 @@ class MaybeList a where
 class HasLocation f where
   location :: f a -> a
 
+class Location l where
+  getBegin :: l -> l
+  getEnd :: l -> l
+
 setLocation :: (Functor f) => b -> f a -> f b
 setLocation b = (const b <$>)
 
@@ -24,8 +28,12 @@ instance Render () where
   render () = "()"
   {-# INLINE render #-}
 
-instance Render a => Render [a] where
+instance (Render a) => Render [a] where
   render xs = "(" <> T.intercalate " " (render <$> xs) <> ")"
+  {-# INLINE render #-}
+
+instance (Render a) => Render (NonEmpty a) where
+  render xs = "(" <> T.intercalate " " (render <$> toList xs) <> ")"
   {-# INLINE render #-}
 
 instance (Render a, Render b) => Render (a, b) where
@@ -35,3 +43,7 @@ instance (Render a, Render b) => Render (a, b) where
 instance (Render a, Render b, Render c) => Render (a, b, c) where
   render (a, b, c) = "(" <> render a <> " . " <> render b <> " . " <> render c <> ")"
   {-# INLINE render #-}
+
+instance Location () where
+  getBegin () = ()
+  getEnd () = ()

@@ -11,7 +11,9 @@ import Zaphod.Types.Class
 import Zaphod.Types.Location
 import Zaphod.Types.Wrapper
 
-data RawBug = NotListRaw (Raw ())
+data RawBug
+  = NotListRaw (Raw ())
+  | RawEmptyList
   deriving (Show)
 
 instance Exception RawBug
@@ -23,6 +25,9 @@ data Raw' k
   deriving (Show, Eq, Functor)
 
 type Raw = LocF Raw'
+
+instance (Semigroup l) => Semigroup (Raw l) where
+  a <> b = RPair a b :# (location a <> location b)
 
 instance Render (Raw l) where
   render (RUnit :# _) = "()"
@@ -41,16 +46,12 @@ instance MaybeList (Raw l) where
   maybeList (RPair l r :# _) = (l :) <$> maybeList r
   maybeList _ = Nothing
 
-instance (Monoid l) => IsString (Raw l) where
-  fromString s = RSymbol (fromString s) :# mempty
-
-instance (Monoid l) => IsList (Raw l) where
+instance (Semigroup l, Location l) => IsList (Raw l) where
   type Item (Raw l) = Raw l
 
-  fromList [] = RUnit :# mempty
-  fromList (x : xs) =
-    let y = fromList xs
-     in RPair x y :# (location x <> location y)
+  fromList [] = bug RawEmptyList
+  fromList [x] = x <> (RUnit :# getEnd (location x))
+  fromList (x : xs) = x <> fromList xs
 
   toList (RUnit :# _) = []
   toList (RPair l r :# _) = l : GHC.Exts.toList r

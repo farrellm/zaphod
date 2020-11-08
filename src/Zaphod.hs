@@ -32,19 +32,23 @@ emptyZState =
 printError :: (MonadIO m) => EvaluatorException Loc -> m ()
 printError err =
   case err of
-    (NoMatches z) ->
+    NoMatches z ->
       putTextLn ("No implicit arguments available of type: " <> render z)
-    (MultipleMatches z es) -> do
+    MultipleMatches z es -> do
       putTextLn ("Multiple implicit arguments available of type: " <> render z)
       for_ es $ \e ->
         putTextLn ("- " <> render e)
-    (InvalidParameters r) -> putTextLn ("Invalid parameters: " <> render r)
-    (NotList r) -> putTextLn ("Expected a list, found: " <> render r)
-    (BadBegin r) -> putTextLn ("Invalid 'begin': " <> render r)
-    (NativeException l n) -> do
+    InvalidParameters r -> putTextLn ("Invalid parameters: " <> render r)
+    NotList r -> putTextLn ("Expected a list, found: " <> render r)
+    BadBegin r -> putTextLn ("Invalid 'begin': " <> render r)
+    NativeException l n -> do
       print n
       printLocation l
-    (CheckerException c) -> case c of
+    CheckerException c -> case c of
+      NotSubtype a b l -> do
+        putTextLn "Not subtype: "
+        putTextLn (render a <> " < " <> render b)
+        printLocation l
       TypeError a b l -> do
         putTextLn "Type mismatch: "
         putTextLn (render a <> " /= " <> render b)
@@ -57,15 +61,14 @@ printError err =
           )
         printLocation l
       _ -> print (stripLocation c)
-    (InvalidLambda r) -> do
+    InvalidLambda r -> do
       putTextLn ("Invalid lambda: " <> render r)
       printLocation (location r)
-    (InvalidMacro r) -> do
+    InvalidMacro r -> do
       putTextLn ("Invalid macro: " <> render r)
       printLocation (location r)
   where
-    printLocation (Just l) = putTextLn ("at " <> show l)
-    printLocation Nothing = pass
+    printLocation l = putTextLn ("at " <> show l)
 
 evalText :: Text -> Zaphod Loc ()
 evalText t =

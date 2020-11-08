@@ -25,7 +25,8 @@ import Zaphod.Context
 import Zaphod.Types
 
 type MonadEvaluator l m =
-  ( Monoid l,
+  ( Semigroup l,
+    Location l,
     MonadReader Environment m,
     MonadError (EvaluatorException l) m,
     MonadIO m
@@ -64,7 +65,8 @@ evaluate expr = do
   runReaderT (eval expr) (mempty, env)
   where
     eval ::
-      ( Monoid k,
+      ( Semigroup k,
+        Location k,
         MonadReader (Environment, Environment) m,
         MonadError (EvaluatorException k) m,
         MonadIO m
@@ -95,11 +97,12 @@ evaluate expr = do
           local (\(_, n) -> (M.insert v x' env, n)) . errorLocation l $ eval e
         ELambdaN vs e env _ :@ _ -> do
           mxs' <- eval x
-          case maybeList mxs' of
-            Just xs' ->
-              local (\(_, n) -> (foldl' insertVar env (zip vs xs'), n))
+          case nonEmpty <$> maybeList mxs' of
+            Just (Just xs') ->
+              local (\(_, n) -> (foldl' insertVar env (zip vs $ toList xs'), n))
                 . errorLocation l
                 $ eval e
+            Just Nothing -> errorLocation l $ eval e
             Nothing -> bug Unreachable
         EImplicit (Variable v) e env (ZImplicit i _) :@ _ -> do
           (lcl, gbl) <- ask
@@ -127,11 +130,11 @@ evaluate expr = do
       f' <- eval f
       setType r <$> case f' of
         ELambda1 (Variable v) e env _ :@ _ -> do
-          x' <- eval (fromList xs)
+          x' <- eval (fromNonEmpty xs)
           local (\(_, n) -> (M.insert v x' env, n)) . errorLocation l $ eval e
         ELambdaN vs e env _ :@ _ -> do
           xs' <- traverse eval xs
-          local (\(_, n) -> (foldl' insertVar env (zip vs xs'), n))
+          local (\(_, n) -> (foldl' insertVar env (zip vs $ toList xs'), n))
             . errorLocation l
             $ eval e
         EImplicit (Variable v) e env (ZImplicit i _) :@ _ -> do
@@ -177,7 +180,7 @@ evaluate expr = do
 
     findOfType z env = do
       (lcl, gbl) <- ask
-      usingReaderT (M.union lcl gbl) $ do
+      usingReaderT (M.union lcl gbl) $
         M.fromList <$> filterM (isSubtype z . exprType . snd) (M.toList env)
 
     insertVar env (Variable v, x) = M.insert v x env
@@ -208,10 +211,11 @@ analyzeType (RPair (RSymbol "cons" :# lc) ts :# lp) =
   analyzeType (RPair (RSymbol "zcons" :# lc) ts :# lp)
 analyzeType (a :. b) = do
   a' <- stripLocation <$> analyzeUntyped a
-  case maybeList b of
-    Just xs -> do
+  case nonEmpty <$> maybeList b of
+    Just (Just xs) -> do
       xs' <- traverse (fmap unwrapUntyped . analyzeType) xs
       pure $ ZUntyped (EApplyN a' xs' () :@ ())
+    Just Nothing -> pure $ ZUntyped (EApply1 a' (EUnit :@ ()) () :@ ())
     Nothing -> do
       b' <- analyzeType b
       pure $ ZUntyped (EApply1 a' (EType b' :@ ()) () :@ ())
@@ -247,8 +251,11 @@ analyzeUntyped (RS ":" `RPair` (e :. t :. RU) :# l) =
 analyzeUntyped (RS "quote" `RPair` (x :. RU) :# l) =
   pure $ EQuote (analyzeQuoted x) () :@ l
 analyzeUntyped (RPair a b :# l) =
-  case maybeList b of
-    Just xs -> (:@ l) <$> (EApplyN <$> analyzeUntyped a <*> traverse analyzeUntyped xs <*> pure ())
+  case nonEmpty <$> maybeList b of
+    Just (Just xs) ->
+      (:@ l) <$> (EApplyN <$> analyzeUntyped a <*> traverse analyzeUntyped xs <*> pure ())
+    Just Nothing ->
+      (:@ l) <$> (EApply1 <$> analyzeUntyped a <*> pure (EUnit :@ getEnd l) <*> pure ())
     Nothing -> (:@ l) <$> (EApply1 <$> analyzeUntyped a <*> analyzeUntyped b <*> pure ())
 
 maybeSymbol :: Raw l -> Maybe Symbol
@@ -256,7 +263,7 @@ maybeSymbol (RSymbol s :# _) = Just s
 maybeSymbol _ = Nothing
 
 evaluateRaw ::
-  (Monoid l, MonadState ZState m, MonadError (EvaluatorException l) m, MonadIO m) =>
+  (Semigroup l, Location l, MonadState ZState m, MonadError (EvaluatorException l) m, MonadIO m) =>
   Maybe (Symbol, Raw l) ->
   Raw l ->
   m (Typed ())
@@ -280,7 +287,7 @@ evaluateRaw m x = do
     universalize z =
       let es = unbound z
           us = universals z
-          eus = mkEUMap (toList es) us ['a' ..]
+          eus = mkEUMap (S.toList es) us ['a' ..]
        in flipfoldl' ZForall (replaceExt eus z) eus
 
     unbound (ZExistential e) = one e
@@ -333,7 +340,7 @@ macroExpand1 w = do
         _ -> (:# lq) . RPair a <$> goInner b
       where
         goMacro l = do
-          let f' = setLocation mempty l
+          let f' = setLocation lq l
           b' <- analyzeUntyped $ quote b
           x' <- evaluate =<< liftChecker synthesize (EApply1 f' b' () :@ lq)
           pure $ setLocation lq (toRaw x')
@@ -343,7 +350,7 @@ macroExpand1 w = do
     goInner (RPair x y :# l) = (:# l) <$> (RPair <$> go x <*> goInner y)
     goInner r = pure r
 
-    quote e = ["quote", e]
+    quote e@(_ :# l) = (RSymbol "quote" :# getBegin l) <> (e <> (RUnit :# getEnd l))
 
     toRaw (EUnit :@ l) = RUnit :# l
     toRaw (ESymbol s _ :@ l) = RSymbol s :# l
@@ -358,7 +365,7 @@ macroExpand w = do
     else macroExpand w'
 
 evaluateTopLevel' ::
-  (Monoid l, MonadState ZState m, MonadError (EvaluatorException l) m, MonadIO m) =>
+  (Semigroup l, Location l, MonadState ZState m, MonadError (EvaluatorException l) m, MonadIO m) =>
   Raw l ->
   m (Typed ())
 evaluateTopLevel' (RS "def" :. RS s :. e :. RU) = do
@@ -380,7 +387,7 @@ evaluateTopLevel' (RPair (RSymbol "begin" :# _) r :# _) =
 evaluateTopLevel' e = evaluateRaw Nothing e
 
 evaluateTopLevel ::
-  (Monoid l, MonadState ZState m, MonadError (EvaluatorException l) m, MonadIO m) =>
+  (Semigroup l, Location l, MonadState ZState m, MonadError (EvaluatorException l) m, MonadIO m) =>
   Raw l ->
   m (Typed ())
 evaluateTopLevel r = do

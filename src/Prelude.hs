@@ -2,13 +2,15 @@
 
 module Prelude
   ( module X,
+    toList,
     trace',
     traceM',
   )
 where
 
 import Control.Monad.Except as X (MonadError, throwError)
-import Relude as X
+import Data.List.NonEmpty (toList)
+import Relude as X hiding (toList)
 import Relude.Extra.Bifunctor as X (bimapF)
 
 debug :: Bool

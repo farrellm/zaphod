@@ -12,7 +12,8 @@ import Zaphod.Context
 import Zaphod.Types
 
 type MonadChecker l m =
-  ( Monoid l,
+  ( Semigroup l,
+    Location l,
     MonadState CheckerState m,
     MonadError (CheckerException l) m
   )
@@ -423,8 +424,8 @@ synthesize' (EApply1 e1 e2 () :@ l) = do
   applyCtxExpr (EApply1 (setType ze1'' e1') e2' c :@ l)
 synthesize' (EApplyN e1 e2s () :@ l) = do
   e1' <- synthesize e1
-  (ze1'', e2', c) <- exprType e1' `applySynth` fromList e2s
-  case maybeList e2' of
+  (ze1'', e2', c) <- exprType e1' `applySynth` fromNonEmpty e2s
+  case nonEmpty =<< maybeList e2' of
     Just e2s' -> applyCtxExpr (EApplyN (setType ze1'' e1') e2s' c :@ l)
     Nothing -> bug Unreachable
 synthesize' (EPair l r () :@ loc) = do

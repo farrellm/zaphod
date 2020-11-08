@@ -7,7 +7,6 @@ module Zaphod.Parser
   )
 where
 
-import qualified Control.Monad.Combinators.NonEmpty as NE (some)
 import Text.Megaparsec hiding (token, tokens)
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
@@ -70,7 +69,7 @@ withSourcePos p = do
   a <- getSourcePos
   t <- p
   b <- getSourcePos
-  pure $ t :# Just (Loc a b)
+  pure $ t :# Loc a b
 
 unit :: Parser (Raw Loc)
 unit = withSourcePos $ parens "" $> RUnit
@@ -81,23 +80,20 @@ pair = withSourcePos $ parens (RPair <$> token <* dot <*> token)
 symbol_ :: Parser (Raw Loc)
 symbol_ = withSourcePos $ RSymbol . Symbol <$> identifier
 
-mkPair :: Raw Loc -> Raw Loc -> Raw Loc
-mkPair l r = RPair l r :# (location l <> location r)
-
 list :: Parser (Raw Loc)
-list = do
-  ts <- parens $ NE.some token
-  pure (foldr mkPair (RUnit :# Nothing) ts)
+list = fromList <$> parens (some token)
 
 tuple :: Parser (Raw Loc)
 tuple = do
+  a <- getSourcePos
   ts <- brackets $ many token
-  pure (foldr mkPair (RUnit :# Nothing) ("tuple" : ts))
+  pure $ fromList ((RSymbol "tuple" :# Loc a a) : ts)
 
 mkQuote :: Char -> Symbol -> Parser (Raw Loc)
 mkQuote c s = do
+  a <- getSourcePos
   t <- char c *> token
-  pure $ mkPair (RSymbol s :# Nothing) (mkPair t (RUnit :# Nothing))
+  pure $ fromList [RSymbol s :# Loc a a, t]
 
 quote :: Parser (Raw Loc)
 quote = mkQuote '\'' "quote"

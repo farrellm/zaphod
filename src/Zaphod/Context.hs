@@ -104,7 +104,7 @@ substitute _ _ z@(ZType _) = z
 substitute _ _ z@(ZUniversal _) = z
 substitute _ _ z@(ZExistential _) = z
 
-substituteValue :: (Monoid l) => ZType -> ZType -> Typed l -> Typed l
+substituteValue :: ZType -> ZType -> Typed l -> Typed l
 substituteValue _ _ e@(EUnit :@ _) = e
 substituteValue x y (ESymbol s t :@ l) = ESymbol s (substitute x y t) :@ l
 substituteValue x y (EPair l r t :@ o) =
@@ -113,7 +113,7 @@ substituteValue x y (EPair l r t :@ o) =
     (substituteValue x y r)
     (substitute x y t)
     :@ o
-substituteValue _ _ e = bug (NotImplemented $ render e)
+substituteValue _ _ e = bug (NotImplemented $ render (stripLocation e))
 
 solveExistential ::
   (MonadState CheckerState m, MonadError (CheckerException ()) m) =>
