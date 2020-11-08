@@ -24,17 +24,15 @@ import Zaphod.Checker
 import Zaphod.Context
 import Zaphod.Types
 
-type MonadEvaluator l m =
-  ( Semigroup l,
-    Location l,
-    MonadReader Environment m,
-    MonadError (EvaluatorException l) m,
+type MonadEvaluator m =
+  ( MonadReader Environment m,
+    MonadError (EvaluatorException Loc) m,
     MonadIO m
   )
 
 liftChecker ::
-  (MonadError (EvaluatorException l) m) =>
-  (a -> ExceptT (CheckerException l) m b) ->
+  (MonadError (EvaluatorException Loc) m) =>
+  (a -> ExceptT (CheckerException Loc) m b) ->
   a ->
   m b
 liftChecker f x = do
@@ -59,7 +57,7 @@ isSubtype a b = do
     Left NotSubtype {} -> pure False
     Left err -> throwError (CheckerException err)
 
-evaluate :: (MonadEvaluator l m) => Typed l -> m (Typed ())
+evaluate :: (MonadEvaluator m) => Typed Loc -> m (Typed ())
 evaluate expr = do
   env <- ask
   runReaderT (eval expr) (mempty, env)
@@ -185,7 +183,7 @@ evaluate expr = do
 
     insertVar env (Variable v, x) = M.insert v x env
 
-evaluateType :: (MonadEvaluator l m) => Untyped l -> m ZType
+evaluateType :: (MonadEvaluator m) => Untyped Loc -> m ZType
 evaluateType u = do
   env <- ask
   t <- evaluatingStateT (emptyCheckerState env) $ liftChecker (check u) (ZType 0)
@@ -194,7 +192,7 @@ evaluateType u = do
     setExprType (ZValue e) = ZValue (setType (ZType 0) e)
     setExprType z = z
 
-analyzeType :: (MonadEvaluator l m) => Raw l -> m ZType
+analyzeType :: (MonadEvaluator m) => Raw Loc -> m ZType
 analyzeType RU = pure ZUnit
 analyzeType x@(RS _) = ZUntyped . stripLocation <$> analyzeUntyped x
 analyzeType (RS "_forall" :. RS u :. z :. RU) = ZForall (Universal u) <$> analyzeType z
@@ -225,7 +223,7 @@ analyzeQuoted (RUnit :# l) = EUnit :@ l
 analyzeQuoted (RSymbol s :# l) = ESymbol s () :@ l
 analyzeQuoted (RPair x y :# l) = EPair (analyzeQuoted x) (analyzeQuoted y) () :@ l
 
-analyzeUntyped :: (MonadEvaluator l m) => Raw l -> m (Untyped l)
+analyzeUntyped :: (MonadEvaluator m) => Raw Loc -> m (Untyped Loc)
 analyzeUntyped (RUnit :# l) = pure (EUnit :@ l)
 analyzeUntyped (RSymbol s :# l) = pure $ ESymbol s () :@ l
 analyzeUntyped (RS "lambda" `RPair` (RS x :. e :. RU) :# l) =
@@ -263,9 +261,9 @@ maybeSymbol (RSymbol s :# _) = Just s
 maybeSymbol _ = Nothing
 
 evaluateRaw ::
-  (Semigroup l, Location l, MonadState ZState m, MonadError (EvaluatorException l) m, MonadIO m) =>
-  Maybe (Symbol, Raw l) ->
-  Raw l ->
+  (MonadState ZState m, MonadError (EvaluatorException Loc) m, MonadIO m) =>
+  Maybe (Symbol, Raw Loc) ->
+  Raw Loc ->
   m (Typed ())
 evaluateRaw m x = do
   env <- _environment <$> get
@@ -319,15 +317,12 @@ evaluateRaw m x = do
     replaceExt eus (ZValue a) = ZValue $ setType (replaceExt eus $ exprType a) a
     replaceExt _ z = z
 
-evaluateRawType :: (MonadEvaluator l m) => Raw l -> m ZType
+evaluateRawType :: (MonadEvaluator m) => Raw Loc -> m ZType
 evaluateRawType t = do
   t' <- analyzeType t
-  errorLocation (location t) $ evaluateType (stripExpr t')
-  where
-    stripExpr (ZUntyped u) = u
-    stripExpr z = EType z :@ ()
+  evaluateType . setLocation (location t) $ unwrapUntyped t'
 
-macroExpand1 :: (MonadEvaluator l m) => Raw l -> m (Raw l)
+macroExpand1 :: (MonadEvaluator m) => Raw Loc -> m (Raw Loc)
 macroExpand1 w = do
   env <- ask
   evaluatingStateT (emptyCheckerState env) $ go w
@@ -357,7 +352,7 @@ macroExpand1 w = do
     toRaw (EPair x y _ :@ l) = RPair (toRaw x) (toRaw y) :# l
     toRaw _ = bug Unreachable
 
-macroExpand :: (MonadEvaluator l m) => Raw l -> m (Raw l)
+macroExpand :: (MonadEvaluator m) => Raw Loc -> m (Raw Loc)
 macroExpand w = do
   w' <- macroExpand1 w
   if stripLocation w == stripLocation w'
@@ -365,8 +360,8 @@ macroExpand w = do
     else macroExpand w'
 
 evaluateTopLevel' ::
-  (Semigroup l, Location l, MonadState ZState m, MonadError (EvaluatorException l) m, MonadIO m) =>
-  Raw l ->
+  (MonadState ZState m, MonadError (EvaluatorException Loc) m, MonadIO m) =>
+  Raw Loc ->
   m (Typed ())
 evaluateTopLevel' (RS "def" :. RS s :. e :. RU) = do
   e' <- evaluateRaw Nothing e
@@ -387,8 +382,8 @@ evaluateTopLevel' (RPair (RSymbol "begin" :# _) r :# _) =
 evaluateTopLevel' e = evaluateRaw Nothing e
 
 evaluateTopLevel ::
-  (Semigroup l, Location l, MonadState ZState m, MonadError (EvaluatorException l) m, MonadIO m) =>
-  Raw l ->
+  (MonadState ZState m, MonadError (EvaluatorException Loc) m, MonadIO m) =>
+  Raw Loc ->
   m (Typed ())
 evaluateTopLevel r = do
   env <- _environment <$> get

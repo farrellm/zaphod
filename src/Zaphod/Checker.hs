@@ -12,9 +12,7 @@ import Zaphod.Context
 import Zaphod.Types
 
 type MonadChecker l m =
-  ( Semigroup l,
-    Location l,
-    MonadState CheckerState m,
+  ( MonadState CheckerState m,
     MonadError (CheckerException l) m
   )
 
@@ -157,17 +155,17 @@ instantiateR a b =
   logInfo ("inR " <> render a <> " := " <> render b) $
     instantiateR' a b
 
-check :: (MonadChecker l m) => Untyped l -> ZType -> m (Typed l)
+check :: (MonadChecker Loc m) => Untyped Loc -> ZType -> m (Typed Loc)
 check a b =
   logInfo ("chk " <> render a <> " =: " <> render b) $
     check' a b
 
-synthesize :: (MonadChecker l m) => Untyped l -> m (Typed l)
+synthesize :: (MonadChecker Loc m) => Untyped Loc -> m (Typed Loc)
 synthesize a =
   logInfo ("syn " <> render a) $
     synthesize' a
 
-applySynth :: (MonadChecker l m) => ZType -> Untyped l -> m (ZType, Typed l, ZType)
+applySynth :: (MonadChecker Loc m) => ZType -> Untyped Loc -> m (ZType, Typed Loc, ZType)
 applySynth a b =
   logInfo ("app " <> render a <> " =>> " <> render b) $
     applySynth' a b
@@ -324,7 +322,7 @@ instantiateR' x alphaHat = do
       (alphaHat1 `instantiateL`) =<< applyCtxType a1
       (`instantiateR` alphaHat2) =<< applyCtxType a2
 
-check' :: (MonadChecker l m) => Untyped l -> ZType -> m (Typed l)
+check' :: (MonadChecker Loc m) => Untyped Loc -> ZType -> m (Typed Loc)
 -- 1|
 check' (EUnit :@ l) ZUnit = pure (EUnit :@ l)
 -- ∀|
@@ -368,14 +366,14 @@ check' e b = do
     exprType a `subtype` b'
   applyCtxExpr a
 
-checkFunction1 :: (MonadChecker l m) => Variable -> Untyped l -> ZType -> ZType -> m (Typed l)
+checkFunction1 :: (MonadChecker Loc m) => Variable -> Untyped Loc -> ZType -> ZType -> m (Typed Loc)
 checkFunction1 x e a b = do
   context %= (CVariable x a <:)
   e' <- e `check` b
   context %= dropVar x
   pure e'
 
-checkFunctionN :: (MonadChecker l m) => [Variable] -> Untyped l -> [ZType] -> ZType -> m (Typed l)
+checkFunctionN :: (MonadChecker Loc m) => [Variable] -> Untyped Loc -> [ZType] -> ZType -> m (Typed Loc)
 checkFunctionN xs e cs b = do
   for_ (zip xs cs) $ \(x, c) ->
     context %= (CVariable x c <:)
@@ -384,7 +382,7 @@ checkFunctionN xs e cs b = do
     context %= dropVar x
   pure e'
 
-synthesize' :: (MonadChecker l m) => Untyped l -> m (Typed l)
+synthesize' :: (MonadChecker Loc m) => Untyped Loc -> m (Typed Loc)
 -- Var
 synthesize' (ESymbol a () :@ l) = do
   ctx <- use context
@@ -433,7 +431,7 @@ synthesize' (EPair l r () :@ loc) = do
   r' <- synthesize r
   pure (EPair l' r' (ZPair (exprType l') (exprType r')) :@ loc)
 -- Type
-synthesize' (EType m :@ l) = (:@ l) . EType <$> errorLocation l (synthesizeType m)
+synthesize' (EType m :@ l) = (:@ l) . EType <$> synthesizeType m
   where
     synthesizeType (ZForall u@(Universal s) t) = do
       let v = Variable s
@@ -453,7 +451,7 @@ synthesize' (EType m :@ l) = (:@ l) . EType <$> errorLocation l (synthesizeType 
       a' <- synthesizeType a
       b' <- synthesizeType b
       pure (ZPair a' b')
-    synthesizeType (ZUntyped e) = unwrapType <$> synthesize e
+    synthesizeType (ZUntyped e) = unwrapType <$> synthesize (setLocation l e)
     synthesizeType (ZValue _) = bug Unreachable
     synthesizeType z = pure z
 -- Quote
@@ -471,7 +469,7 @@ synthesize' (EQuote x () :@ lq) =
        in EPair l' r' (ZPair (exprType l') (exprType r')) :@ loc
     synthesizeQuoted _ = bug Unreachable
 
-synthesizeFunction1 :: (MonadChecker l m) => Variable -> Untyped l -> m (Typed l, ZType, ZType)
+synthesizeFunction1 :: (MonadChecker Loc m) => Variable -> Untyped Loc -> m (Typed Loc, ZType, ZType)
 synthesizeFunction1 x e = do
   alphaHat <- ZExistential <$> nextExtential
   betaHat <- ZExistential <$> nextExtential
@@ -480,7 +478,7 @@ synthesizeFunction1 x e = do
   context %= dropVar x
   pure (e', alphaHat, betaHat)
 
-synthesizeFunctionN :: (MonadChecker l m) => [Variable] -> Untyped l -> m (Typed l, [ZType], ZType)
+synthesizeFunctionN :: (MonadChecker Loc m) => [Variable] -> Untyped Loc -> m (Typed Loc, [ZType], ZType)
 synthesizeFunctionN xs e = do
   alphaHats <- forM xs $ \x -> do
     alphaHat <- ZExistential <$> nextExtential
@@ -493,7 +491,7 @@ synthesizeFunctionN xs e = do
     context %= dropVar x
   pure (e', snd <$> alphaHats, betaHat)
 
-applySynth' :: (MonadChecker l m) => ZType -> Untyped l -> m (ZType, Typed l, ZType)
+applySynth' :: (MonadChecker Loc m) => ZType -> Untyped Loc -> m (ZType, Typed Loc, ZType)
 -- ∀App
 applySynth' (ZForall alpha a) e = do
   alphaHat <- nextExtential
