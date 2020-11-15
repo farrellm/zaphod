@@ -227,20 +227,20 @@ analyzeUntyped :: (MonadEvaluator m) => Raw Loc -> m (Untyped Loc)
 analyzeUntyped (RUnit :# l) = pure (EUnit :@ l)
 analyzeUntyped (RSymbol s :# l) = pure $ ESymbol s () :@ l
 analyzeUntyped (RS "lambda" `RPair` (RS x :. e :. RU) :# l) =
-  (:@ l) <$> (ELambda1 (Variable x) <$> analyzeUntyped e <*> pure mempty <*> pure ())
+  (:@ l) <$> (ELambda1 (Variable x) <$> analyzeUntyped e <*> pure mempty <*> pass)
 analyzeUntyped (RS "lambda" `RPair` (mxs :. e :. RU) :# l)
   | Just xs <- maybeList mxs,
     Just vs <- traverse maybeSymbol xs =
-    (:@ l) <$> (ELambdaN (Variable <$> vs) <$> analyzeUntyped e <*> pure mempty <*> pure ())
+    (:@ l) <$> (ELambdaN (Variable <$> vs) <$> analyzeUntyped e <*> pure mempty <*> pass)
 analyzeUntyped r@(RS "lambda" `RPair` _ :# _) = throwError (InvalidLambda r)
 analyzeUntyped (RS "implicit" `RPair` (RS x :. e :. RU) :# l) =
-  (:@ l) <$> (EImplicit (Variable x) <$> analyzeUntyped e <*> pure mempty <*> pure ())
+  (:@ l) <$> (EImplicit (Variable x) <$> analyzeUntyped e <*> pure mempty <*> pass)
 analyzeUntyped (RS "macro" `RPair` (RS x :. e :. RU) :# l) =
-  (:@ l) <$> (EMacro1 (Variable x) <$> analyzeUntyped e <*> pure ())
+  (:@ l) <$> (EMacro1 (Variable x) <$> analyzeUntyped e <*> pass)
 analyzeUntyped (RS "macro" `RPair` (mxs :. e :. RU) :# l)
   | Just xs <- maybeList mxs,
     Just vs <- traverse maybeSymbol xs =
-    (:@ l) <$> (EMacroN (Variable <$> vs) <$> analyzeUntyped e <*> pure ())
+    (:@ l) <$> (EMacroN (Variable <$> vs) <$> analyzeUntyped e <*> pass)
 analyzeUntyped r@(RS "macro" `RPair` _ :# _) = throwError (InvalidMacro r)
 analyzeUntyped (RS ":" `RPair` (t :. RS "Type" :. RU) :# l) =
   (:@ l) . EType <$> analyzeType t
@@ -251,10 +251,10 @@ analyzeUntyped (RS "quote" `RPair` (x :. RU) :# l) =
 analyzeUntyped (RPair a b :# l) =
   case nonEmpty <$> maybeList b of
     Just (Just xs) ->
-      (:@ l) <$> (EApplyN <$> analyzeUntyped a <*> traverse analyzeUntyped xs <*> pure ())
+      (:@ l) <$> (EApplyN <$> analyzeUntyped a <*> traverse analyzeUntyped xs <*> pass)
     Just Nothing ->
-      (:@ l) <$> (EApply1 <$> analyzeUntyped a <*> pure (EUnit :@ getEnd l) <*> pure ())
-    Nothing -> (:@ l) <$> (EApply1 <$> analyzeUntyped a <*> analyzeUntyped b <*> pure ())
+      (:@ l) <$> (EApply1 <$> analyzeUntyped a <*> pure (EUnit :@ getEnd l) <*> pass)
+    Nothing -> (:@ l) <$> (EApply1 <$> analyzeUntyped a <*> analyzeUntyped b <*> pass)
 
 maybeSymbol :: Raw l -> Maybe Symbol
 maybeSymbol (RSymbol s :# _) = Just s
@@ -328,7 +328,7 @@ macroExpand1 w = do
   evaluatingStateT (emptyCheckerState env) $ go w
   where
     go a@(RS "quote" :. _) = pure a
-    go (RPair a@(RSymbol s :# _) b :# lq) = do
+    go (RPair a@(RS s) b :# lq) = do
       f <- M.lookup s <$> ask
       case f of
         Just (EMacro1 v e _ :@ ()) -> goMacro $ ELambda1 v (stripType e) mempty () :@ ()

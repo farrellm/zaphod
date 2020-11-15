@@ -6,7 +6,7 @@ import Lens.Micro.TH (makeLenses)
 import Zaphod.Types.Context
 import Zaphod.Types.Expr (Environment)
 
-data ZState = ZState
+newtype ZState = ZState
   { _environment :: Environment
   }
   deriving (Show)
@@ -14,9 +14,9 @@ data ZState = ZState
 makeLenses ''ZState
 
 data CheckerState = CheckerState
-  { _context :: Context,
-    _existentialData :: Char,
-    _depth :: Int
+  { _context :: !Context,
+    _existentialData :: !Char,
+    _depth :: !Int
   }
   deriving (Show)
 

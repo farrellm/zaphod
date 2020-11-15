@@ -98,9 +98,9 @@ baseEnvironment =
     cons l r = EPair l r (ZPair (exprType l) (exprType r)) :@ ()
     isNil (EUnit :@ _) = zTrue
     isNil _ = zFalse
-    isSymbol (ESymbol _ _ :@ _) = zTrue
+    isSymbol (ESymbol {} :@ _) = zTrue
     isSymbol _ = zFalse
-    isPair (EPair _ _ _ :@ _) = zTrue
+    isPair (EPair {} :@ _) = zTrue
     isPair _ = zFalse
     symbolConcat x y = do
       s <- liftA2 (<>) (getSymbol "symbol-concat" x) (getSymbol "symbol-concat" y)
