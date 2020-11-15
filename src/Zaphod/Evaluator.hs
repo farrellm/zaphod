@@ -327,6 +327,7 @@ macroExpand1 w = do
   env <- ask
   evaluatingStateT (emptyCheckerState env) $ go w
   where
+    go a@(RS "quote" :. _) = pure a
     go (RPair a@(RSymbol s :# _) b :# lq) = do
       f <- M.lookup s <$> ask
       case f of
