@@ -123,6 +123,9 @@ evaluate expr = do
             Just [a, b] -> errorLocation l . liftNative $ g a b
             _ -> bug Unreachable
         ENativeIO (NativeIO g) _ :@ _ -> liftIO g
+        EType u :@ _ -> do
+          x' <- eval x
+          pure $ EType (ZPair u $ unwrapType x') :@ ()
         _ -> bug Unreachable
     eval (EApplyN f xs r :@ l) = do
       f' <- eval f
@@ -159,6 +162,9 @@ evaluate expr = do
               errorLocation l . liftNative $ g a' b'
             _ -> bug Unreachable
         ENativeIO (NativeIO g) _ :@ _ -> liftIO g
+        EType u :@ _ -> do
+          xs' <- traverse eval xs
+          pure $ EType (ZPair u $ unwrapTypes xs') :@ ()
         _ -> bug Unreachable
     eval (EPair a b t :@ _) = (:@ ()) <$> (EPair <$> eval a <*> eval b <*> pure t)
     eval (ELambda1 v e _ t :@ _) = (:@ ()) <$> (ELambda1 v (stripLocation e) <$> (fst <$> ask) <*> pure t)

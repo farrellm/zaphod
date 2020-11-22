@@ -230,6 +230,10 @@ unwrapType :: Typed l -> ZType
 unwrapType (EType z :@ _) = z
 unwrapType e = ZValue $ stripLocation e
 
+unwrapTypes :: NonEmpty (Typed l) -> ZType
+unwrapTypes (y :| []) = ZPair (unwrapType y) ZUnit
+unwrapTypes (y :| (z : zs)) = ZPair (unwrapType y) $ unwrapTypes (z :| zs)
+
 unwrapUntyped :: ZType -> Untyped ()
 unwrapUntyped (ZUntyped e) = e
 unwrapUntyped (ZValue e) = stripType e

@@ -434,8 +434,9 @@ synthesize' (EPair l r () :@ loc) = do
 synthesize' (EType m :@ l) = (:@ l) . EType <$> synthesizeType m
   where
     synthesizeType (ZForall u@(Universal s) t) = do
+      k <- ZExistential <$> nextExtential
       let v = Variable s
-      context %= (CVariable v (ZType 0) <:)
+      context %= (CVariable v k <:)
       t' <- synthesizeType t
       context %= dropVar v
       ZForall u <$> applyCtxType t'
