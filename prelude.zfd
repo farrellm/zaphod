@@ -96,12 +96,6 @@
   (-> [(-> [Nat Any] Any) Any] Any)
   (top-map-index' f l Z))
 
-(defn (alist-lookup k l)
-  (-> [Any Any] Any)
-  (if (top-eq k (caar l))
-      (cdar l)
-      (alist-lookup k (cdr l))))
-
 (defn (top-zip xs ys)
   (-> [Any Any] Any)
   (if (or (is-nil xs) (is-nil ys))

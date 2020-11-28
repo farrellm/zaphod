@@ -33,29 +33,79 @@
 (def cddar (-> [Any] Any) (lambda (x) (cdr (cdr (car x)))))
 (def cdddr (-> [Any] Any) (lambda (x) (cdr (cdr (cdr x)))))
 
+(def top-foldr
+     (_forall a (_forall b (-> [(-> [b a] a) a Any] a)))
+     (lambda (f i l)
+       (if (is-nil l) i
+           (f (unsafe-coerce (car l))
+              (top-foldr f i (cdr l))))))
+
+(def alist-lookup
+     (-> [Any Any] Any)
+     (lambda (k l)
+       (if (top-eq k (caar l))
+           (cdar l)
+           (alist-lookup k (cdr l)))))
+
+(def alist-lookup'
+     (-> [Any Any Any] Any)
+     (lambda (k d l)
+       (if (is-nil l)
+           (: d Any)
+           (if (top-eq k (caar l))
+               (cdar l)
+               (alist-lookup' k d (cdr l))))))
+
+(def mk-forall
+     (-> [Symbol Any] Any)
+     (lambda (u e)
+       ['_forall u e]))
+
+(def forall
+     (-> [Any Any] Any)
+     (macro (us e)
+       (top-foldr mk-forall e us)))
+
+(def mk-let
+     (forall (a) (-> [[Symbol Any] a] Any))
+     (lambda (b e)
+       (if (symbol-eq (fst b) '_)
+           (: e Any)
+           [['lambda [(fst b)] e] (fst (snd b))])))
+
+(def let
+     (-> [Any Any] Any)
+     (macro (ps e)
+       (top-foldr mk-let e ps)))
+
+(def defn'
+     (-> [Symbol Any Any Any] Any)
+     (lambda (n p t e)
+       (if (is-symbol (car t))
+           (: ['def n t ['lambda p e]] Any)
+           (let ((a (alist-lookup' 'forall () t))
+                 (c (alist-lookup' '=> () t))
+                 (f (alist-lookup '-> t))
+                 (t' ['forall a
+                              (top-foldr
+                               (lambda (i r) (: ['=> i r] Any))
+                               (cons '-> f)
+                               c)]))
+             ['def n t'
+                   (top-foldr
+                    (lambda (_ r) (: ['implicit (unsafe-gensym) r] Any))
+                    ['lambda p e]
+                    c)]))))
+
 (def defn
-     (-> [(cons Symbol Any) Type Any] Any)
+     (-> [(cons Symbol Any) Any Any] Any)
      (macro (p t e)
-       ['def (fst p) t ['lambda (snd p) e]]))
+       (defn' (fst p) (snd p) t e)))
 
 (def defmacro
      (-> [(cons Symbol Any) Type Any] Any)
      (macro (p t e)
        ['def (car p) t ['macro (cdr p) e]]))
-
-(defn (top-foldr f i l)
-  (_forall a (_forall b (-> [(-> [b a] a) a Any] a)))
-  (if (is-nil l) i
-      (f (unsafe-coerce (car l))
-         (top-foldr f i (cdr l)))))
-
-(defn (mk-forall u e)
-  (-> [Symbol Any] Any)
-  ['_forall u e])
-
-(defmacro (forall us e)
-  (-> [Any Any] Any)
-  (top-foldr mk-forall e us))
 
 (defn (top-foldl f i l)
   (forall (a b) (-> [(-> [a b] a) a Any] a))
@@ -74,14 +124,6 @@
           (-> [(-> [b] c) (-> [a] b)]
               (-> [a] c)))
   (lambda (x) (f (g x))))
-
-(defn (mk-let b e)
-  (forall (a) (-> [[Symbol Any] a] Any))
-  [['lambda [(fst b)] e] (fst (snd b))])
-
-(defmacro (let ps e)
-  (-> [Any Any] Any)
-  (top-foldr mk-let e ps))
 
 (defn (foralls xs e)
   (-> [Any Any] Any)
