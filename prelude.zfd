@@ -42,13 +42,35 @@
   (-> [Bool] Bool)
   (if p False True))
 
-(defn (and x y)
-  (-> [Bool Bool] Bool)
-  (if x y False))
+(defn (and' x)
+  (-> [Any] Any)
+  (if (is-nil (cdr x))
+      (car x)
+      ['if (car x)
+           (and' (cdr x))
+           'False]))
 
-(defn (or x y)
-  (-> [Bool Bool] Bool)
-  (if x True y))
+(def and
+     (-> Any Any)
+     (macro x
+       (if (is-nil x)
+           (: 'True Any)
+           (and' x))))
+
+(defn (or' x)
+  (-> [Any] Any)
+  (if (is-nil (cdr x))
+      (car x)
+      ['if (car x)
+           'True
+           (or' (cdr x))]))
+
+(def or
+     (-> Any Any)
+     (macro x
+       (if (is-nil x)
+           (: 'False Any)
+           (or' x))))
 
 (defn (unsafe-from-just m)
   (forall (a) (-> [(Maybe a)] a))
