@@ -9,6 +9,7 @@ module Zaphod where
 import Options.Applicative
 import qualified System.Console.Haskeline as Hl
 import Text.Megaparsec (errorBundlePretty, runParser)
+import Text.Megaparsec.Pos
 import Zaphod.Base
 import Zaphod.Evaluator
 import Zaphod.Parser (tokens)
@@ -30,7 +31,8 @@ emptyZState =
     }
 
 printError :: (MonadIO m) => EvaluatorException Loc -> m ()
-printError err =
+printError err = do
+  putTextLn ""
   case err of
     NoMatches z ->
       putTextLn ("No implicit arguments available of type: " <> render z)
@@ -41,34 +43,43 @@ printError err =
     InvalidParameters r -> putTextLn ("Invalid parameters: " <> render r)
     NotList r -> putTextLn ("Expected a list, found: " <> render r)
     BadBegin r -> putTextLn ("Invalid 'begin': " <> render r)
-    NativeException l n -> do
-      print n
-      printLocation l
+    NativeException l n -> case n of
+      TypeMismatch f x t -> do
+        printLocation l
+        putTextLn
+          ( "Runtime type mismatch in " <> f <> ", expecting "
+              <> t
+              <> " but got "
+              <> render x
+          )
     CheckerException c -> case c of
       NotSubtype a b l -> do
+        printLocation l
         putTextLn "Not subtype: "
         putTextLn (render a <> " < " <> render b)
-        printLocation l
       TypeError a b l -> do
+        printLocation l
         putTextLn "Type mismatch: "
         putTextLn (render a <> " /= " <> render b)
-        printLocation l
       ExistentialAlreadySolved t e u l -> do
+        printLocation l
         putTextLn
           ( "Existential already solved, setting " <> render e <> "=" <> render u
               <> " to "
               <> render t
           )
-        printLocation l
+      CannotApply t e -> do
+        printLocation (location e)
+        putTextLn ("Cannot apply type " <> render t <> " to value " <> render e)
       _ -> print (stripLocation c)
     InvalidLambda r -> do
+      printLocation (location r)
       putTextLn ("Invalid lambda: " <> render r)
-      printLocation (location r)
     InvalidMacro r -> do
-      putTextLn ("Invalid macro: " <> render r)
       printLocation (location r)
+      putTextLn ("Invalid macro: " <> render r)
   where
-    printLocation l = putTextLn ("at " <> show l)
+    printLocation (Loc b _) = putStrLn (sourcePosPretty b <> ": error:")
 
 evalText :: Text -> Zaphod Loc ()
 evalText t =
