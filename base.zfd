@@ -119,6 +119,12 @@
              ()
              l))
 
+(defn (top-append xs ys)
+  (forall (a b) (-> [a b] Any))
+  (top-foldr (lambda (x a) (: (cons x a) Any))
+             ys
+             xs))
+
 (defn (compose f g)
   (forall (a b c)
           (-> [(-> [b] c) (-> [a] b)]
@@ -163,27 +169,118 @@
           (foralls xs ['-> (cons 'tuple (cdr c)) (cons n xs)])
           ['unsafe-coerce (cons 'tuple (cons ['quote (car c')] (cdr c')))]])))
 
+(defn (cons-pred1 n c)
+  (-> [Any Any] Any)
+  (let ((g (unsafe-gensym)))
+    (if (is-symbol c)
+        (: ['defn [(symbol-concat 'is (unsafe-coerce c)) g]
+             ['-> ['tuple n] 'Bool]
+             ['top-eq ['quote c] g]]
+           Any)
+        ['defn [(symbol-concat 'is (unsafe-coerce (car c))) g]
+          ['-> ['tuple n] 'Bool]
+          ['if ['is-pair g]
+               ['top-eq ['quote (car c)] ['car g]]
+               'False]])))
+
+(defn (cons-pred n xs c)
+  (-> [Any Any Any] Any)
+  (let ((g (unsafe-gensym)))
+    (if (is-symbol c)
+        (: ['defn [(symbol-concat 'is (unsafe-coerce c)) g]
+             (foralls xs ['-> ['tuple (cons n xs)] 'Bool])
+             ['top-eq ['quote c] g]]
+           Any)
+        ['defn [(symbol-concat 'is (unsafe-coerce (car c))) g]
+          (foralls xs ['-> ['tuple (cons n xs)] 'Bool])
+          ['if ['is-pair g]
+               ['top-eq ['quote (car c)] ['car g]]
+               'False]])))
+
+(defn (cons-acc1-p n g c)
+  (-> [Any Any Any] (-> [Any Any] Any))
+  (lambda (s p)
+    [(symbol-concat (unsafe-coerce (car s)) 'i)
+     ['cdr (cadr s)]
+     (cons
+      ['defn [(car s) g]
+        ['-> ['tuple n] p]
+        ['unsafe-coerce ['car (cadr s)]]]
+      (caddr s))]))
+
+(defn (cons-acc-p n xs g c)
+  (-> [Any Any Any Any] (-> [Any Any] Any))
+  (lambda (s p)
+    [(symbol-concat (unsafe-coerce (car s)) 'i)
+     ['cdr (cadr s)]
+     (cons
+      ['defn [(car s) g]
+        (foralls xs ['-> ['tuple (cons n xs)] p])
+        ['unsafe-coerce ['car (cadr s)]]]
+      (caddr s))]))
+
+(defn (cons-acc1 n c)
+  (-> [Any Any] Any)
+  (if (is-symbol c)
+      (: () Any)
+      (let ((g (unsafe-gensym)))
+        (cons 'begin
+              (caddr (top-foldl
+                      (cons-acc1-p n g (car c))
+                      [(symbol-concat
+                        'unsafe-
+                        (symbol-concat (unsafe-coerce (car c)) '-i))
+                       ['cdr g]
+                       []]
+                      (cdr c)))))))
+
+(defn (cons-acc n xs c)
+  (-> [Any Any Any] Any)
+  (if (is-symbol c)
+      (: () Any)
+      (let ((g (unsafe-gensym)))
+        (cons 'begin
+              (caddr (top-foldl
+                      (cons-acc-p n xs g (car c))
+                      [(symbol-concat
+                        'unsafe-
+                        (symbol-concat (unsafe-coerce (car c)) '-i))
+                       ['cdr g]
+                       []]
+                      (cdr c)))))))
+
 (defn (data1 n cs)
   (-> [Any Any] Any)
-  (cons
-   'begin
-   (cons
+  ['begin
     ['def n
           'Type
           ['quote n]]
-    (top-map (lambda (c) (constructor1 n c))
-             cs))))
+    (cons 'begin (top-map (lambda (c) (constructor1 n c)) cs))
+    (cons 'begin (top-map (lambda (c) (cons-pred1 n c)) cs))
+    (cons 'begin (top-map (lambda (c) (cons-acc1 n c)) cs))])
+
+(defn (data-arg-name x)
+  (-> [Any] Any)
+  (if (is-symbol x)
+      x
+      (cadr x)))
+
+(defn (data-arg-kind x)
+  (-> [Any] Any)
+  (if (is-symbol x)
+      (: 'Type Any)
+      (caddr x)))
 
 (defn (data' n xs cs)
   (-> [Any Any Any] Any)
-  (cons
-   'begin
-   (cons
-    ['def n
-          ['-> (cons 'tuple (top-map (const 'Type) xs)) 'Type]
-          ['lambda xs [': (cons 'tuple (cons ['quote n] xs)) 'Type]]]
-    (top-map (lambda (c) (constructor n xs c))
-             cs))))
+  (let ((ps (top-map data-arg-name xs)))
+    ['begin
+      ['def n
+            ['-> (cons 'tuple (top-map data-arg-kind xs)) 'Type]
+            ['lambda ps [': (cons 'tuple (cons ['quote n] ps)) 'Type]]]
+      (cons 'begin (top-map (lambda (c) (constructor n ps c)) cs))
+      (cons 'begin (top-map (lambda (c) (cons-pred n ps c)) cs))
+      (cons 'begin (top-map (lambda (c) (cons-acc n ps c)) cs))]))
 
 (def data
      (-> (cons Any Any) Any)

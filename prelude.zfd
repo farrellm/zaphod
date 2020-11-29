@@ -22,12 +22,6 @@
   (forall (a) (-> [a] a))
   x)
 
-(defn (top-append xs ys)
-  (forall (a b) (-> [a b] Any))
-  (top-foldr (lambda (x a) (: (cons x a) Any))
-             ys
-             xs))
-
 (defn (top-reverse' xs ys)
   (forall (a b) (-> [a b] Any))
   (if (is-nil xs)
