@@ -132,9 +132,10 @@
 
 (defn (record' n ts c fs ks)
   (-> [Symbol Any Symbol Any Any] Any)
-  (let ((mk-field (lambda (i f)
+  (let ((ps (top-map data-arg-name ts))
+        (mk-field (lambda (i f)
                     ['def (car f)
-                          ['forall ts ['-> ['cons (cons n ts) ()] (cadr f)]]
+                          ['forall ps ['-> ['cons (cons n ps) ()] (cadr f)]]
                           ['lambda '(r) ['unsafe-coerce ['unsafe-top-nth i '(cdr r)]]]]))
         (xs (top-map cadr fs))
         (g (symbol-concat '_ c ))
@@ -165,7 +166,8 @@
 (defn (class' n ts fs)
   (-> [Symbol Any Any] Any)
   (let ((gs (unsafe-gensyms ts))
-        (gm (top-zip (top-map car fs) gs)))
+        (gm (top-zip (top-map car fs) gs))
+        (ts' (top-map data-arg-name ts)))
     (cons
      'begin
      (cons
@@ -183,8 +185,8 @@
          (let ((r (unsafe-gensym))
                (ps (unsafe-gensyms (cdadr f))))
            ['def (car f)
-                 ['forall ts
-                          ['=> (cons n ts)
+                 ['forall ts'
+                          ['=> (cons n ts')
                                (cadr f)]]
                  ['implicit r ['lambda ps (cons [(alist-lookup (car f) gm) r]
                                                 ps)]]]))
