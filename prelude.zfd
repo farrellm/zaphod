@@ -32,6 +32,11 @@
   (forall (a) (-> [a] Any))
   (top-reverse' xs ()))
 
+(def top-concat
+  (-> Any Any)
+  (lambda xs
+    (top-foldr top-append () xs)))
+
 (defn (not p)
   (-> [Bool] Bool)
   (if p False True))
