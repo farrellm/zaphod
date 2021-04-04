@@ -13,16 +13,16 @@ data LookupResult
   | RMissing
   deriving (Show)
 
-data ContextEntry
+data ContextEntry l
   = CUnsolved Existential
   | CSolved Existential ZType
   | CMarker Existential
   | CUniversal Universal
   | CVariable Variable ZType
-  | CEnvironment Environment
+  | CEnvironment (Environment (Typed l))
   deriving (Show)
 
-instance Render ContextEntry where
+instance Render (ContextEntry l) where
   render (CUnsolved a) = render a
   render (CSolved a b) = render a <> "=" <> render b
   render (CMarker a) = ">" <> render a
@@ -30,11 +30,11 @@ instance Render ContextEntry where
   render (CVariable a b) = render a <> ":" <> render b
   render (CEnvironment _) = "<env>"
 
-newtype Context = Context [ContextEntry]
+newtype Context l = Context [ContextEntry l]
   deriving (Show)
 
-instance Render Context where
+instance Render (Context l) where
   render (Context cs) = "Context [" <> T.intercalate ", " (render <$> cs) <> "]"
 
-data Hole = Hole Existential [ContextEntry]
+data Hole l = Hole Existential [ContextEntry l]
   deriving (Show)

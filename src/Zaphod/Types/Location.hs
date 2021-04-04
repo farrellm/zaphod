@@ -21,12 +21,13 @@ deriving instance (Eq (f (LocF f l)), Eq l) => Eq (LocF f l)
 instance HasLocation (LocF f) where
   location (_ :# l) = l
 
-data LocB f t l = f t (LocB f t l) :@ l
+data LocB f t l = f t l :@ l
   deriving (Functor, Foldable, Traversable)
 
-deriving instance (Show (f t (LocB f t l)), Show l) => Show (LocB f t l)
+deriving instance (Show (f t l), Show l) => Show (LocB f t l)
 
-deriving instance (Eq (f t (LocB f t l)), Eq l) => Eq (LocB f t l)
+instance Eq (f t l) => Eq (LocB f t l) where
+  a :@ _ == b :@ _ = a == b
 
 deriveBifunctor ''LocB
 deriveBifoldable ''LocB

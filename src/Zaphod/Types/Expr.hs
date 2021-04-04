@@ -2,7 +2,9 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -10,7 +12,9 @@ module Zaphod.Types.Expr where
 
 import Data.Bifunctor.TH (deriveBifoldable, deriveBifunctor, deriveBitraversable)
 import qualified GHC.Exts (IsList (..))
+import qualified GHC.Exts as GE
 import qualified GHC.Show (Show (..))
+import Relude.Extra.Map
 import Zaphod.Types.Class
 import Zaphod.Types.Location
 import Zaphod.Types.Wrapper
@@ -26,26 +30,47 @@ data ExprBug
 
 instance Exception ExprBug
 
-data NativeException
-  = TypeMismatch Text (Typed ()) Text
-  deriving (Show)
+data NativeException l
+  = TypeMismatch Text (Typed l) Text
+  deriving (Show, Functor)
 
-data Expr t h
+newtype Environment e = Environment {getEnvironment :: Map Symbol e}
+  deriving (Show, Eq, Functor, Foldable, Traversable, Semigroup, Monoid)
+
+instance StaticMap (Environment e) where
+  type Key (Environment e) = Symbol
+  type Val (Environment e) = e
+  size = size . getEnvironment
+  lookup k = lookup k . getEnvironment
+  member v = member v . getEnvironment
+
+instance DynamicMap (Environment e) where
+  insert k v = Environment . insert k v . getEnvironment
+  insertWith f k v = Environment . insertWith f k v . getEnvironment
+  delete k = Environment . delete k . getEnvironment
+  alter f k = Environment . alter f k . getEnvironment
+
+instance IsList (Environment e) where
+  type Item (Environment e) = (Symbol, e)
+  fromList = Environment . fromList
+  toList = GE.toList . getEnvironment
+
+data Expr t l
   = EType ZType
   | EUnit
   | ESymbol Symbol t
-  | ELambda1 Variable h Environment t
-  | ELambdaN [Variable] h Environment t
-  | EImplicit Variable h Environment t
-  | EMacro1 Variable h t
-  | EMacroN [Variable] h t
-  | EApply1 h h t
-  | EApplyN h (NonEmpty h) t
-  | EPair h h t
-  | EAnnotation h ZType
-  | EQuote h t
-  | ENative1 Native1 t
-  | ENative2 Native2 t
+  | ELambda1 Variable (LocB Expr t l) (Environment (Typed l)) t
+  | ELambdaN [Variable] (LocB Expr t l) (Environment (Typed l)) t
+  | EImplicit Variable (LocB Expr t l) (Environment (Typed l)) t
+  | EMacro1 Variable (LocB Expr t l) t
+  | EMacroN [Variable] (LocB Expr t l) t
+  | EApply1 (LocB Expr t l) (LocB Expr t l) t
+  | EApplyN (LocB Expr t l) (NonEmpty (LocB Expr t l)) t
+  | EPair (LocB Expr t l) (LocB Expr t l) t
+  | EAnnotation (LocB Expr t l) ZType
+  | EQuote (LocB Expr t l) t
+  | ENative Native t
+  | ENative' Native' t
   | ENativeIO NativeIO t
   | ESpecial t
   deriving (Show, Eq, Functor, Foldable, Traversable)
@@ -111,21 +136,21 @@ instance Render ZType where
   render (ZUntyped x) = "{" <> render x <> "}"
   render ZAny = "Any"
 
-newtype Native1 = Native1 (Typed () -> Either NativeException (Typed ()))
+newtype Native = Native (forall l. Typed l -> Either (NativeException l) (Typed ()))
 
-instance Eq Native1 where
+instance Eq Native where
   _ == _ = bug EqUndefined
 
-instance Show Native1 where
-  show _ = "Native1 <native1>"
+instance Show Native where
+  show _ = "Native <native>"
 
-newtype Native2 = Native2 (Typed () -> Typed () -> Either NativeException (Typed ()))
+newtype Native' = Native' (forall l. (Semigroup l, Location l) => Typed l -> Either (NativeException l) (Typed l))
 
-instance Eq Native2 where
+instance Eq Native' where
   _ == _ = bug EqUndefined
 
-instance Show Native2 where
-  show _ = "Native2 <native2>"
+instance Show Native' where
+  show _ = "Native' <native>"
 
 newtype NativeIO = NativeIO (IO (Typed ()))
 
@@ -134,8 +159,6 @@ instance Eq NativeIO where
 
 instance Show NativeIO where
   show _ = "NativeIO <nativeIO>"
-
-type Environment = Map Symbol (Typed ())
 
 deriveBifunctor ''Expr
 deriveBifoldable ''Expr
@@ -193,8 +216,8 @@ exprType (EPair _ _ t :@ _) = t
 exprType (EApply1 _ _ t :@ _) = t
 exprType (EApplyN _ _ t :@ _) = t
 exprType (EQuote _ t :@ _) = t
-exprType (ENative1 _ t :@ _) = t
-exprType (ENative2 _ t :@ _) = t
+exprType (ENative _ t :@ _) = t
+exprType (ENative' _ t :@ _) = t
 exprType (ENativeIO _ t :@ _) = t
 exprType (ESpecial t :@ _) = t
 
@@ -218,8 +241,8 @@ instance Render (Untyped l) where
         xs' = fromNonEmpty $ fmap stripLocation xs
      in render (EPair f' xs' () :@ ())
   render (EQuote t () :@ _) = "'" <> render t
-  render (ENative1 _ () :@ _) = "<native1>"
-  render (ENative2 _ () :@ _) = "<native2>"
+  render (ENative _ () :@ _) = "<native>"
+  render (ENative' _ () :@ _) = "<native>"
   render (ENativeIO _ () :@ _) = "<nativeIO>"
   render (ESpecial () :@ _) = "<special>"
 
@@ -237,7 +260,7 @@ unwrapTypes (y :| (z : zs)) = ZPair (unwrapType y) $ unwrapTypes (z :| zs)
 unwrapUntyped :: ZType -> Untyped ()
 unwrapUntyped (ZUntyped e) = e
 unwrapUntyped (ZValue e) = stripType e
-unwrapUntyped z = EType z :@ ()
+unwrapUntyped z = EType z :@ mempty
 
 setType :: ZType -> Typed l -> Typed l
 setType _ (EUnit :@ l) = EUnit :@ l
@@ -253,8 +276,8 @@ setType z (EApplyN f xs _ :@ l) = EApplyN f xs z :@ l
 setType z (EPair x y _ :@ l) = EPair x y z :@ l
 setType z (EAnnotation e _ :@ l) = EAnnotation e z :@ l
 setType z (EQuote q _ :@ l) = EQuote q z :@ l
-setType z (ENative1 n _ :@ l) = ENative1 n z :@ l
-setType z (ENative2 n _ :@ l) = ENative2 n z :@ l
+setType z (ENative n _ :@ l) = ENative n z :@ l
+setType z (ENative' n _ :@ l) = ENative' n z :@ l
 setType z (ENativeIO n _ :@ l) = ENativeIO n z :@ l
 setType z (ESpecial _ :@ l) = ESpecial z :@ l
 

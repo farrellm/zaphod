@@ -26,9 +26,6 @@ data Raw' k
 
 type Raw = LocF Raw'
 
-instance (Semigroup l) => Semigroup (Raw l) where
-  a <> b = RPair a b :# (location a <> location b)
-
 instance Render (Raw l) where
   render (RUnit :# _) = "()"
   render (RSymbol s :# _) = render s
@@ -50,8 +47,12 @@ instance (Semigroup l, Location l) => IsList (Raw l) where
   type Item (Raw l) = Raw l
 
   fromList [] = bug RawEmptyList
-  fromList [x] = x <> (RUnit :# getEnd (location x))
-  fromList (x : xs) = x <> fromList xs
+  fromList [x] =
+    let l = location x
+     in RPair x (RUnit :# getEnd l) :# l
+  fromList (x : xs) =
+    let xs' = fromList xs
+     in RPair x xs' :# (location x <> location xs')
 
   toList (RUnit :# _) = []
   toList (RPair l r :# _) = l : GHC.Exts.toList r

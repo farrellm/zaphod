@@ -103,7 +103,7 @@
        (defn' (fst p) (snd p) t e)))
 
 (def defmacro
-     (-> [(cons Symbol Any) Type Any] Any)
+     (-> [(cons Symbol Any) Any Any] Any)
      (macro (p t e)
        ['def (car p) t ['macro (cdr p) e]]))
 

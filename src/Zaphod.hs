@@ -22,15 +22,15 @@ data ZaphodOptions = ZaphodOptions
   }
   deriving (Show)
 
-type Zaphod l = StateT ZState (ExceptT (EvaluatorException l) IO)
+type Zaphod = StateT (ZState (Maybe Loc)) (ExceptT (EvaluatorException (Maybe Loc)) IO)
 
-emptyZState :: ZState
+emptyZState :: ZState (Maybe Loc)
 emptyZState =
   ZState
-    { _environment = baseEnvironment
+    { _environment = setLocation mempty <$> baseEnvironment
     }
 
-printError :: (MonadIO m) => EvaluatorException Loc -> m ()
+printError :: (MonadIO m) => EvaluatorException (Maybe Loc) -> m ()
 printError err = do
   putTextLn ""
   case err of
@@ -43,9 +43,9 @@ printError err = do
     InvalidParameters r -> putTextLn ("Invalid parameters: " <> render r)
     NotList r -> putTextLn ("Expected a list, found: " <> render r)
     BadBegin r -> putTextLn ("Invalid 'begin': " <> render r)
-    NativeException l n -> case n of
+    NativeException n -> case n of
       TypeMismatch f x t -> do
-        printLocation l
+        printLocation (location x)
         putTextLn
           ( "Runtime type mismatch in " <> f <> ", expecting "
               <> t
@@ -61,8 +61,7 @@ printError err = do
         printLocation l
         putTextLn "Type mismatch: "
         putTextLn (render a <> " /= " <> render b)
-      ExistentialAlreadySolved t e u l -> do
-        printLocation l
+      ExistentialAlreadySolved t e u ->
         putTextLn
           ( "Existential already solved, setting " <> render e <> "=" <> render u
               <> " to "
@@ -79,15 +78,16 @@ printError err = do
       printLocation (location r)
       putTextLn ("Invalid macro: " <> render r)
   where
-    printLocation (Loc b _) = putStrLn (sourcePosPretty b <> ": error:")
+    printLocation (Just (Loc b _)) = putStrLn (sourcePosPretty b <> ": error:")
+    printLocation Nothing = pass
 
-evalText :: Text -> Zaphod Loc ()
+evalText :: Text -> Zaphod ()
 evalText t =
   case runParser tokens "<cmd>" t of
     Left e -> putStrLn (errorBundlePretty e)
-    Right rs -> traverse_ (evaluateTopLevel >=> putTextLn . render) rs
+    Right rs -> traverse_ (evaluateTopLevel >=> putTextLn . render) $ fmap Just <$> rs
 
-repl :: Maybe Text -> Zaphod Loc ()
+repl :: Maybe Text -> Zaphod ()
 repl _ = do
   z <- get
   z' <- Hl.runInputT Hl.defaultSettings (loop z)
@@ -104,7 +104,7 @@ repl _ = do
               putStrLn (errorBundlePretty e)
               loop z
             Right rs -> do
-              z' <- foldlM go z rs
+              z' <- foldlM go z $ fmap Just <$> rs
               loop z'
 
     go z r = do
@@ -117,13 +117,13 @@ repl _ = do
           printError err
           pure z
 
-runFile :: FilePath -> Zaphod Loc ()
+runFile :: FilePath -> Zaphod ()
 runFile p = do
   t <- readFileText p
   zs <- case runParser tokens p t of
     Left e -> die (errorBundlePretty e)
     Right v -> pure v
-  traverse_ evaluateTopLevel zs
+  traverse_ (evaluateTopLevel . fmap Just) zs
 
 zaphod :: IO ()
 zaphod = do

@@ -20,7 +20,7 @@ data EvaluatorException l
   | InvalidParameters (Raw l)
   | NotList (Raw l)
   | BadBegin (Raw l)
-  | NativeException l NativeException
+  | NativeException (NativeException l)
   | CheckerException (CheckerException l)
   | InvalidLambda (Raw l)
   | InvalidMacro (Raw l)
@@ -32,5 +32,5 @@ data CheckerException l
   | TypeError ZType ZType l
   | NotSubtype ZType ZType l
   | UndefinedVariable Variable
-  | ExistentialAlreadySolved ZType Existential ZType l
+  | ExistentialAlreadySolved ZType Existential ZType
   deriving (Show, Functor)

@@ -94,7 +94,7 @@ test = do
     print' (evaluated car)
   case res of
     Right () -> pass
-    Left err -> print err
+    Left err -> printError err
   where
     print' ioA = putTextLn . render =<< ioA
     --
@@ -134,14 +134,14 @@ test = do
     analyzed a =
       withZaphod
         ( analyzeUntyped
-            =<< macroExpand
+            =<< macroExpand . fmap Just
             =<< parseTest a
         )
     synthesized a =
       withZaphod
         ( liftChecker synthesize
             =<< analyzeUntyped
-            =<< macroExpand
+            =<< macroExpand . fmap Just
             =<< parseTest a
         )
     evaluated a =
@@ -149,6 +149,6 @@ test = do
         ( evaluate
             =<< liftChecker synthesize
             =<< analyzeUntyped
-            =<< macroExpand
+            =<< macroExpand . fmap Just
             =<< parseTest a
         )

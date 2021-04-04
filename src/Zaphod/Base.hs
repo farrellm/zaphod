@@ -44,40 +44,40 @@ zTuple3 :: ZType -> ZType -> ZType -> ZType
 zTuple3 x y z = ZPair x $ zTuple2 y z
 
 zBool :: ZType
-zBool = ZValue (ESymbol "Bool" (ZType 0) :@ ())
+zBool = ZValue (ESymbol "Bool" (ZType 0) :@ mempty)
 
-zTrue :: Typed ()
-zTrue = ESymbol "True" zBool :@ ()
+zTrue :: (Monoid l) => Typed l
+zTrue = ESymbol "True" zBool :@ mempty
 
-zFalse :: Typed ()
-zFalse = ESymbol "False" zBool :@ ()
+zFalse :: (Monoid l) => Typed l
+zFalse = ESymbol "False" zBool :@ mempty
 
-baseEnvironment :: Environment
+baseEnvironment :: Environment (Typed ())
 baseEnvironment =
-  M.fromList
+  (Environment . M.fromList)
     [ -- Native values
-      ("Any", EType ZAny :@ ()),
-      ("Symbol", EType ZSymbol :@ ()),
-      ("Type", EType (ZType 0) :@ ()),
+      ("Any", EType ZAny :@ mempty),
+      ("Symbol", EType ZSymbol :@ mempty),
+      ("Type", EType (ZType 0) :@ mempty),
       -- Native functions
-      ("zcons", ENative2 (Native2 zcons) zZCons :@ ()),
+      ("zcons", ENative (Native (zcons . zUncurry2)) zZCons :@ mempty),
       --
-      ("cons", ENative2 (Native2 $ \l r -> pure $ cons l r) zCons :@ ()),
-      ("fst", ENative1 (Native1 $ fmap fst . getPair "fst") zFst :@ ()),
-      ("snd", ENative1 (Native1 $ fmap snd . getPair "snd") zSnd :@ ()),
+      ("cons", ENative' (Native' (cons . zUncurry2)) zCons :@ mempty),
+      ("fst", ENative' (Native' $ fmap fst . getPair "fst") zFst :@ mempty),
+      ("snd", ENative' (Native' $ fmap snd . getPair "snd") zSnd :@ mempty),
       --
-      ("is-nil", ENative1 (Native1 $ pure . isNil) zPred :@ ()),
-      ("is-symbol", ENative1 (Native1 $ pure . isSymbol) zPred :@ ()),
-      ("is-pair", ENative1 (Native1 $ pure . isPair) zPred :@ ()),
-      ("symbol-eq", ENative2 (Native2 $ \x y -> pure $ stripEq x y) zSymbolEq :@ ()),
-      ("symbol-concat", ENative2 (Native2 symbolConcat) zSymbolConcat :@ ()),
-      ("top-eq", ENative2 (Native2 $ \x y -> pure $ stripEq x y) zAnyEq :@ ()),
-      ("unsafe-gensym", ENativeIO (NativeIO unsafeGensym) zUnsafeGensym :@ ()),
+      ("is-nil", ENative (Native $ pure . isNil) zPred :@ mempty),
+      ("is-symbol", ENative (Native $ pure . isSymbol) zPred :@ mempty),
+      ("is-pair", ENative (Native $ pure . isPair) zPred :@ mempty),
+      ("symbol-eq", ENative (Native (pure . stripEq . zUncurry2)) zSymbolEq :@ mempty),
+      ("symbol-concat", ENative (Native (symbolConcat . zUncurry2)) zSymbolConcat :@ mempty),
+      ("top-eq", ENative (Native (pure . stripEq . zUncurry2)) zAnyEq :@ mempty),
+      ("unsafe-gensym", ENativeIO (NativeIO unsafeGensym) zUnsafeGensym :@ mempty),
       -- Special forms
-      ("if", ESpecial zIf :@ ()),
-      ("apply", ESpecial zApply :@ ()),
+      ("if", ESpecial zIf :@ mempty),
+      ("apply", ESpecial zApply :@ mempty),
       -- bypass type checker
-      ("unsafe-coerce", ENative1 (Native1 pure) zUnsafeCoerce :@ ())
+      ("unsafe-coerce", ENative' (Native' pure) zUnsafeCoerce :@ mempty)
     ]
   where
     zCons = ZForall a . ZForall b $ ZFunction (zTuple2 za zb) (ZPair za zb)
@@ -94,30 +94,34 @@ baseEnvironment =
     zSymbolConcat = ZFunction (zTuple2 ZSymbol ZSymbol) ZSymbol
     zAnyEq = ZForall a . ZForall b $ ZFunction (zTuple2 za zb) zBool
     --
-    zcons l r = (:@ ()) . EType <$> (ZPair <$> getType "zcons" l <*> getType "zcons" r)
-    cons l r = EPair l r (ZPair (exprType l) (exprType r)) :@ ()
+    zcons (l, r) = (:@ mempty) . EType <$> (ZPair <$> getType "zcons" l <*> getType "zcons" r)
+    cons (l, r) = pure $ EPair l r (ZPair (exprType l) (exprType r)) :@ (location l <> location r)
     isNil (EUnit :@ _) = zTrue
     isNil _ = zFalse
     isSymbol (ESymbol {} :@ _) = zTrue
     isSymbol _ = zFalse
     isPair (EPair {} :@ _) = zTrue
     isPair _ = zFalse
-    symbolConcat x y = do
+    symbolConcat (x, y) = do
       s <- liftA2 (<>) (getSymbol "symbol-concat" x) (getSymbol "symbol-concat" y)
-      pure (ESymbol s ZSymbol :@ ())
+      pure (ESymbol s ZSymbol :@ mempty)
     toZBool True = zTrue
     toZBool False = zFalse
-    stripEq x y = toZBool (stripType x == stripType y)
-    unsafeGensym = (:@ ()) <$> (ESymbol <$> gensym <*> pure ZSymbol)
+    stripEq (x, y) = toZBool (stripType x == stripType y)
+    unsafeGensym = (:@ mempty) <$> (ESymbol <$> gensym <*> pure ZSymbol)
 
-getType :: Text -> Typed l -> Either NativeException ZType
+getType :: Text -> Typed l -> Either (NativeException l) ZType
 getType _ (EType z :@ _) = pure z
-getType n e = throwError $ TypeMismatch n (stripLocation e) "Type"
+getType n e = throwError $ TypeMismatch n e "Type"
 
-getPair :: Text -> Typed l -> Either NativeException (Typed l, Typed l)
+getPair :: Text -> Typed l -> Either (NativeException l) (Typed l, Typed l)
 getPair _ (EPair l r _ :@ _) = pure (l, r)
-getPair n e = throwError $ TypeMismatch n (stripLocation e) "Pair"
+getPair n e = throwError $ TypeMismatch n e "Pair"
 
-getSymbol :: Text -> Typed l -> Either NativeException Symbol
+getSymbol :: Text -> Typed l -> Either (NativeException l) Symbol
 getSymbol _ (ESymbol s _ :@ _) = pure s
-getSymbol n e = throwError $ TypeMismatch n (stripLocation e) "Symbol"
+getSymbol n e = throwError $ TypeMismatch n e "Symbol"
+
+zUncurry2 :: Typed l -> (Typed l, Typed l)
+zUncurry2 (EPair l (EPair r (EUnit :@ _) _ :@ _) _ :@ _) = (l, r)
+zUncurry2 _ = bug Unreachable
