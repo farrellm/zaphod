@@ -94,9 +94,6 @@ data ZType
   | ZAny
   deriving (Show, Eq)
 
-instance Semigroup ZType where
-  a <> b = ZPair a b
-
 instance MaybeList ZType where
   isList ZUnit = True
   isList (ZPair _ r) = isList r
@@ -164,12 +161,6 @@ deriveBifunctor ''Expr
 deriveBifoldable ''Expr
 deriveBitraversable ''Expr
 
-instance (Semigroup l) => Semigroup (Untyped l) where
-  a <> b = EPair a b () :@ (location a <> location b)
-
-instance (Semigroup l) => Semigroup (Typed l) where
-  a <> b = EPair a b (exprType a <> exprType b) :@ (location a <> location b)
-
 instance MaybeList (LocB Expr l t) where
   isList (EUnit :@ _) = True
   isList (EPair _ r _ :@ _) = isList r
@@ -183,8 +174,10 @@ instance (Semigroup l, Location l) => IsList (Untyped l) where
   type Item (Untyped l) = Untyped l
 
   fromList [] = bug ListEmpty
-  fromList [x] = x <> (EUnit :@ getEnd (location x))
-  fromList (x : xs) = x <> fromList xs
+  fromList [x] = EPair x (EUnit :@ getEnd (location x)) () :@ location x
+  fromList (x : xs) =
+    let xs' = fromList xs
+     in EPair x xs' () :@ (location x <> location xs')
 
   toList (EUnit :@ _) = []
   toList (EPair l r _ :@ _) = l : GHC.Exts.toList r
@@ -194,8 +187,10 @@ instance (Semigroup l, Location l) => IsList (Typed l) where
   type Item (Typed l) = Typed l
 
   fromList [] = bug ListEmpty
-  fromList [x] = x <> (EUnit :@ getEnd (location x))
-  fromList (x : xs) = x <> fromList xs
+  fromList [x] = EPair x (EUnit :@ getEnd (location x)) (ZPair (exprType x) ZUnit) :@ location x
+  fromList (x : xs) =
+    let xs' = fromList xs
+     in EPair x xs' (ZPair (exprType x) (exprType xs')) :@ (location x <> location xs')
 
   toList (EUnit :@ _) = []
   toList (EPair l r _ :@ _) = l : GHC.Exts.toList r
