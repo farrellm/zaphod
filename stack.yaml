@@ -1,9 +1,6 @@
-# resolver: lts-15.12
-resolver: nightly-2020-09-29
+resolver: lts-17.8
 
 packages:
 - .
-# extra-deps:
-# - base-noprelude-4.14.0.0
 
 # flags: {}
