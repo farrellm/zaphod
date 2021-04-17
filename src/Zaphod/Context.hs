@@ -32,7 +32,7 @@ data ContextBug
 
 instance Exception ContextBug
 
-wind :: Existential -> Context l -> (Hole l, Context l)
+wind :: Existential -> Context -> (Hole, Context)
 wind e (Context cs) =
   let (l, r) = go cs []
    in (Hole e r, Context l)
@@ -41,10 +41,10 @@ wind e (Context cs) =
     go (CUnsolved f : ds) rs | e == f = (ds, rs)
     go (d : ds) rs = go ds (d : rs)
 
-unwind :: Hole l -> Context l -> Context l
+unwind :: Hole -> Context -> Context
 unwind (Hole e rs) (Context es) = Context (flipfoldl' (:) (CUnsolved e : es) rs)
 
-lookupType :: Existential -> Context l -> LookupResult
+lookupType :: Existential -> Context -> LookupResult
 lookupType t (Context es) = go es
   where
     go [] = RMissing
@@ -54,7 +54,7 @@ lookupType t (Context es) = go es
       | k == t = RSolved v
     go (_ : rs) = go rs
 
-lookupVar :: Variable -> Context l -> Maybe ZType
+lookupVar :: Variable -> Context -> Maybe ZType
 lookupVar t (Context es) = go es
   where
     go [] = Nothing
@@ -65,24 +65,24 @@ lookupVar t (Context es) = go es
       Nothing -> go rs
     go (_ : rs) = go rs
 
-(<:) :: ContextEntry l -> Context l -> Context l
+(<:) :: ContextEntry -> Context -> Context
 e <: Context cs = Context (e : cs)
 
-dropMarker :: Existential -> Context l -> Context l
+dropMarker :: Existential -> Context -> Context
 dropMarker a (Context es) = Context $ go es
   where
     go (CMarker b : rs) | a == b = rs
     go (_ : rs) = go rs
     go [] = bug $ MissingMarkerInContext a
 
-dropUniversal :: Universal -> Context l -> Context l
+dropUniversal :: Universal -> Context -> Context
 dropUniversal a (Context es) = Context $ go es
   where
     go (CUniversal b : rs) | a == b = rs
     go (_ : rs) = go rs
     go [] = bug $ MissingUniversalInContext a
 
-dropVar :: Variable -> Context l -> Context l
+dropVar :: Variable -> Context -> Context
 dropVar a (Context es) = Context $ go es
   where
     go (CVariable b _ : rs) | a == b = rs
@@ -116,7 +116,7 @@ substituteValue x y (EPair l r t :@ o) =
 substituteValue _ _ e = bug (NotImplemented $ render (stripLocation e))
 
 solveExistential ::
-  (MonadState (CheckerState l) m, MonadError (CheckerException l) m, Monoid l) =>
+  (MonadState CheckerState m, MonadError (CheckerException l) m, Monoid l) =>
   ZType ->
   Existential ->
   m ()
@@ -134,7 +134,7 @@ solveExistential z e = do
     go (r : rs) = (r :) <$> go rs
     go [] = bug $ MissingExistentialInContext e
 
-isWellFormed :: ZType -> Context l -> Bool
+isWellFormed :: ZType -> Context -> Bool
 isWellFormed (ZType _) _ = True
 isWellFormed ZAny _ = True
 isWellFormed ZUnit _ = True

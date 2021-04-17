@@ -26,7 +26,7 @@ import Zaphod.Context
 import Zaphod.Types
 
 type MonadEvaluator l m =
-  ( MonadReader (Environment (Typed l)) m,
+  ( MonadReader (Environment (Typed ())) m,
     MonadError (EvaluatorException l) m,
     MonadIO m,
     Location l,
@@ -48,7 +48,7 @@ liftNative :: (MonadError (EvaluatorException l) m) => Either (NativeException l
 liftNative = liftEither . first NativeException
 
 isSubtype ::
-  (MonadReader (Environment (Typed l)) m, MonadError (EvaluatorException l) m, Location l, Monoid l) =>
+  (MonadReader (Environment (Typed ())) m, MonadError (EvaluatorException l) m, Location l, Monoid l) =>
   ZType ->
   ZType ->
   m Bool
@@ -68,7 +68,7 @@ evaluate expr = do
     eval ::
       ( Location k,
         Monoid k,
-        MonadReader (Environment (Typed k), Environment (Typed k)) m,
+        MonadReader (Environment (Typed k), Environment (Typed ())) m,
         MonadError (EvaluatorException k) m,
         MonadIO m
       ) =>
@@ -78,7 +78,7 @@ evaluate expr = do
       (m, n) <- bimapF (!? s) (!? s) ask
       pure $ case (m, n) of
         (Just v, _) -> setType z v
-        (_, Just v) -> setType z v
+        (_, Just v) -> setLocation mempty $ setType z v
         (_, _) -> bug Unreachable
     eval (EAnnotation v z :@ _) = setType z <$> eval v
     eval (EApplyN (ESymbol "if" _ :@ _) xs _ :@ _) =
@@ -116,15 +116,13 @@ evaluate expr = do
             Just Nothing -> eval e
             Nothing -> bug Unreachable
         EImplicit (Variable v) e env (ZImplicit i _) :@ _ -> do
-          (lcl, gbl) <- ask
-          a <- findOfType i lcl
-          b <- findOfType i gbl
-          case a <> b of
+          ss <- findOfType i
+          case ss of
             [s] ->
-              local (\(_, n) -> (insert v s env, n)) $
+              local (\(_, n) -> (insert v (setLocation mempty s) env, n)) $
                 eval (EApply1 e x r :@ l)
             [] -> throwError (NoMatches i)
-            ss -> throwError (MultipleMatches i (stripLocation <$> ss))
+            _ -> throwError (MultipleMatches i ss)
         ENative (Native g) _ :@ _ -> do
           x' <- eval x
           case maybeList x' of
@@ -153,15 +151,13 @@ evaluate expr = do
           xs' <- traverse eval xs
           local (\(_, n) -> (foldl' insertVar mempty (zip vs $ toList xs'), n)) $ eval e
         EImplicit (Variable v) e env (ZImplicit i _) :@ _ -> do
-          (lcl, gbl) <- ask
-          a <- findOfType i lcl
-          b <- findOfType i gbl
-          case a <> b of
+          ss <- findOfType i
+          case ss of
             [s] ->
-              local (\(_, n) -> (insert v s env, n)) $
+              local (\(_, n) -> (insert v (setLocation mempty s) env, n)) $
                 eval (EApplyN e xs r :@ l)
             [] -> throwError (NoMatches i)
-            ss -> throwError (MultipleMatches i (stripLocation <$> ss))
+            _ -> throwError (MultipleMatches i ss)
         ENative (Native g) _ :@ _ ->
           case xs of
             [x] -> do
@@ -197,17 +193,17 @@ evaluate expr = do
     evalType z = pure z
 
     findOfType ::
-      ( MonadReader (Environment (Typed l), Environment (Typed l)) m,
+      ( MonadReader (Environment (Typed l), Environment (Typed ())) m,
         MonadError (EvaluatorException l) m,
         Location l,
         Monoid l
       ) =>
       ZType ->
-      Environment (Typed l) ->
-      m [Typed l]
-    findOfType z env = do
+      m [Typed ()]
+    findOfType z = do
       (lcl, gbl) <- ask
-      usingReaderT (lcl <> gbl) $
+      let env = (stripLocation <$> lcl) <> gbl
+      usingReaderT env $
         filterM (isSubtype z . exprType) (elems env)
 
     insertVar :: Environment a -> (Variable, a) -> Environment a
@@ -396,11 +392,11 @@ evaluateTopLevel' ::
   m (Typed ())
 evaluateTopLevel' (RS "def" :. RS s :. e :. RU) = do
   e' <- evaluateRaw Nothing e
-  environment %= insert s e'
+  environment %= insert s (stripLocation e')
   pure (EUnit :@ ())
 evaluateTopLevel' (RS "def" :. RS s :. t :. e :. RU) = do
   e' <- evaluateRaw (Just (s, t)) e
-  environment %= insert s e'
+  environment %= insert s (stripLocation e')
   pure (EUnit :@ ())
 evaluateTopLevel' (RPair (RSymbol "begin" :# _) r :# _) =
   case maybeList r of

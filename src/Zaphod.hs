@@ -27,7 +27,7 @@ type Zaphod = StateT (ZState (Maybe Loc)) (ExceptT (EvaluatorException (Maybe Lo
 emptyZState :: ZState (Maybe Loc)
 emptyZState =
   ZState
-    { _environment = setLocation mempty <$> baseEnvironment
+    { _environment = baseEnvironment
     }
 
 printError :: (MonadIO m) => EvaluatorException (Maybe Loc) -> m ()

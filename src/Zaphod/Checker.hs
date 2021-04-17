@@ -11,7 +11,7 @@ import Zaphod.Context
 import Zaphod.Types
 
 type MonadChecker l m =
-  ( MonadState (CheckerState l) m,
+  ( MonadState CheckerState m,
     MonadError (CheckerException l) m,
     Monoid l,
     Location l
@@ -23,14 +23,14 @@ bind2 f x y = do
   y' <- y
   f x' y'
 
-nextExtential :: (MonadState (CheckerState l) m) => m Existential
+nextExtential :: (MonadState CheckerState m) => m Existential
 nextExtential = do
   c <- existentialData <<%= next
   let n = Existential $ fromString [c]
   context %= (CUnsolved n <:)
   pure n
 
-markExtential :: (MonadState (CheckerState l) m) => (Existential -> m a) -> m a
+markExtential :: (MonadState CheckerState m) => (Existential -> m a) -> m a
 markExtential x = do
   c <- existentialData <<%= next
   let n = Existential $ fromString [c]
@@ -40,7 +40,7 @@ markExtential x = do
   context %= dropMarker n
   pure res
 
-withHole :: (MonadState (CheckerState l) m) => Existential -> m a -> m a
+withHole :: (MonadState CheckerState m) => Existential -> m a -> m a
 withHole e x = do
   (h, ctx) <- wind e <$> use context
   context .= ctx
@@ -48,14 +48,14 @@ withHole e x = do
   context %= unwind h
   pure res
 
-withUniversal :: (MonadState (CheckerState l) m) => Universal -> m a -> m a
+withUniversal :: (MonadState CheckerState m) => Universal -> m a -> m a
 withUniversal alpha x = do
   context %= (CUniversal alpha <:)
   res <- x
   context %= dropUniversal alpha
   pure res
 
-applyCtxType :: (MonadState (CheckerState l) m, Monoid l) => ZType -> m ZType
+applyCtxType :: (MonadState CheckerState m) => ZType -> m ZType
 applyCtxType z@(ZType _) = pure z
 applyCtxType ZAny = pure ZAny
 applyCtxType z@(ZUniversal _) = pure z
@@ -70,10 +70,10 @@ applyCtxType (ZFunction a b) = ZFunction <$> applyCtxType a <*> applyCtxType b
 applyCtxType (ZImplicit a b) = ZImplicit <$> applyCtxType a <*> applyCtxType b
 applyCtxType (ZPair a b) = ZPair <$> applyCtxType a <*> applyCtxType b
 applyCtxType (ZForall a t) = ZForall a <$> applyCtxType t
-applyCtxType (ZValue x) = ZValue . stripLocation <$> applyCtxExpr (setLocation mempty x)
+applyCtxType (ZValue x) = ZValue <$> applyCtxExpr x
 applyCtxType z@(ZUntyped _) = pure z
 
-applyCtxExpr :: (MonadState (CheckerState l) m, Monoid l) => Typed l -> m (Typed l)
+applyCtxExpr :: (MonadState CheckerState m, Monoid l) => Typed l -> m (Typed l)
 applyCtxExpr (EType t :@ l) = (:@ l) . EType <$> applyCtxType t
 applyCtxExpr (EAnnotation e t :@ l) = (:@ l) <$> (EAnnotation <$> applyCtxExpr e <*> applyCtxType t)
 applyCtxExpr e = bitraverse applyCtxType pure e
@@ -119,7 +119,7 @@ isMonoType (ZValue v) = isMonoTypeValue v
 isMonoType (ZForall _ _) = False
 isMonoType (ZUntyped _) = bug Unreachable
 
-isDeeper :: (MonadState (CheckerState l) m) => ZType -> Existential -> m Bool
+isDeeper :: (MonadState CheckerState m) => ZType -> Existential -> m Bool
 isDeeper tau alphaHat = do
   ctx <- _context <$> get
   let ctx' = dropExistential ctx
@@ -160,7 +160,7 @@ applySynth a b =
   logInfo ("app " <> render a <> " =>> " <> render b) $
     applySynth' a b
 
-logInfo :: (Render a, MonadState (CheckerState l) m) => Text -> m a -> m a
+logInfo :: (Render a, MonadState CheckerState m) => Text -> m a -> m a
 logInfo m x = do
   i <- mkIndent
   ctx <- use context
@@ -174,7 +174,7 @@ logInfo m x = do
   traceM' (i <> "     " <> render ctx')
   pure res
   where
-    mkIndent :: (MonadState (CheckerState l) m) => m Text
+    mkIndent :: (MonadState CheckerState m) => m Text
     mkIndent = flip T.replicate "| " <$> use depth
 
 subtype' :: (MonadChecker l m) => ZType -> ZType -> m ()

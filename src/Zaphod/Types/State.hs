@@ -7,14 +7,14 @@ import Zaphod.Types.Context
 import Zaphod.Types.Expr (Environment, Typed)
 
 newtype ZState l = ZState
-  { _environment :: Environment (Typed l)
+  { _environment :: Environment (Typed ())
   }
   deriving (Show)
 
 makeLenses ''ZState
 
-data CheckerState l = CheckerState
-  { _context :: !(Context l),
+data CheckerState = CheckerState
+  { _context :: !Context,
     _existentialData :: !Char,
     _depth :: !Int
   }
@@ -22,7 +22,7 @@ data CheckerState l = CheckerState
 
 makeLenses ''CheckerState
 
-emptyCheckerState :: Environment (Typed l) -> CheckerState l
+emptyCheckerState :: Environment (Typed ()) -> CheckerState
 emptyCheckerState env =
   CheckerState
     { _context = Context [CEnvironment env],
