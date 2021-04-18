@@ -2,7 +2,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Zaphod.Evaluator
@@ -65,15 +64,6 @@ evaluate expr = do
   env <- ask
   runReaderT (eval expr) (mempty, env)
   where
-    eval ::
-      ( Location k,
-        Monoid k,
-        MonadReader (Environment (Typed k), Environment (Typed ())) m,
-        MonadError (EvaluatorException k) m,
-        MonadIO m
-      ) =>
-      Typed k ->
-      m (Typed k)
     eval (ESymbol s z :@ _) = do
       (m, n) <- bimapF (!? s) (!? s) ask
       pure $ case (m, n) of
@@ -192,14 +182,6 @@ evaluate expr = do
     evalType (ZUntyped _) = bug Unreachable
     evalType z = pure z
 
-    findOfType ::
-      ( MonadReader (Environment (Typed l), Environment (Typed ())) m,
-        MonadError (EvaluatorException l) m,
-        Location l,
-        Monoid l
-      ) =>
-      ZType ->
-      m [Typed ()]
     findOfType z = do
       (lcl, gbl) <- ask
       let env = (stripLocation <$> lcl) <> gbl
@@ -287,7 +269,7 @@ maybeSymbol (RSymbol s :# _) = Just s
 maybeSymbol _ = Nothing
 
 evaluateRaw ::
-  (MonadState (ZState l) m, MonadError (EvaluatorException l) m, MonadIO m, Location l, Monoid l) =>
+  (MonadState ZState m, MonadError (EvaluatorException l) m, MonadIO m, Location l, Monoid l) =>
   Maybe (Symbol, Raw l) ->
   Raw l ->
   m (Typed l)
@@ -387,7 +369,7 @@ macroExpand w = do
     else macroExpand w'
 
 evaluateTopLevel' ::
-  (MonadState (ZState l) m, MonadError (EvaluatorException l) m, MonadIO m, Location l, Monoid l) =>
+  (MonadState ZState m, MonadError (EvaluatorException l) m, MonadIO m, Location l, Monoid l) =>
   Raw l ->
   m (Typed ())
 evaluateTopLevel' (RS "def" :. RS s :. e :. RU) = do
@@ -409,7 +391,7 @@ evaluateTopLevel' (RPair (RSymbol "begin" :# _) r :# _) =
 evaluateTopLevel' e = stripLocation <$> evaluateRaw Nothing e
 
 evaluateTopLevel ::
-  (MonadState (ZState l) m, MonadError (EvaluatorException l) m, MonadIO m, Location l, Monoid l) =>
+  (MonadState ZState m, MonadError (EvaluatorException l) m, MonadIO m, Location l, Monoid l) =>
   Raw l ->
   m (Typed ())
 evaluateTopLevel r = do

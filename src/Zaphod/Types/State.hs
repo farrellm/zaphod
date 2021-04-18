@@ -6,7 +6,7 @@ import Lens.Micro.TH (makeLenses)
 import Zaphod.Types.Context
 import Zaphod.Types.Expr (Environment, Typed)
 
-newtype ZState l = ZState
+newtype ZState = ZState
   { _environment :: Environment (Typed ())
   }
   deriving (Show)
