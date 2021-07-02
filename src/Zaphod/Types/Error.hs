@@ -1,5 +1,3 @@
-{-# LANGUAGE DeriveFunctor #-}
-
 module Zaphod.Types.Error where
 
 import Zaphod.Types.Expr (NativeException, Typed, Untyped, ZType)
@@ -24,13 +22,20 @@ data EvaluatorException l
   | CheckerException (CheckerException l)
   | InvalidLambda (Raw l)
   | InvalidMacro (Raw l)
-  deriving (Show, Functor)
+  deriving (Functor)
 
 data CheckerException l
   = ArgumentMissmatch [Variable] ZType
-  | CannotApply ZType (Untyped l)
+  | CannotApply ZType (Untyped ()) l
   | TypeError ZType ZType l
   | NotSubtype ZType ZType l
   | UndefinedVariable Variable
   | ExistentialAlreadySolved ZType Existential ZType
   deriving (Show, Functor)
+
+mapError :: (MonadError a m) => (b -> a) -> ExceptT b m c -> m c
+mapError f x = do
+  res <- runExceptT x
+  case res of
+    Right r -> pure r
+    Left e -> throwError (f e)

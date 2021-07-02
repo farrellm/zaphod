@@ -1,6 +1,3 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# OPTIONS_GHC -fno-warn-deprecations #-}
-
 module Zaphod.Context
   ( wind,
     unwind,
@@ -95,7 +92,17 @@ substitute x y (ZForall beta b) = ZForall beta (substitute x y b)
 substitute x y (ZFunction a b) = ZFunction (substitute x y a) (substitute x y b)
 substitute x y (ZImplicit a b) = ZImplicit (substitute x y a) (substitute x y b)
 substitute x y (ZPair a b) = ZPair (substitute x y a) (substitute x y b)
-substitute x y (ZValue e) = ZValue (substituteValue x y e)
+substitute x y (ZValue e) = ZValue (substituteValue e)
+  where
+    substituteValue z@(LocU EUnit) = z
+    substituteValue (LocU (ESymbol s t)) = LocU $ ESymbol s (substitute x y t)
+    substituteValue (LocU (EPair l r t)) =
+      LocU $
+        EPair
+          (substituteValue l)
+          (substituteValue r)
+          (substitute x y t)
+    substituteValue z = bug (NotImplemented $ render z)
 substitute _ _ t@(ZUntyped _) = bug (NotImplemented $ render t)
 substitute _ _ z@ZUnit = z
 substitute _ _ z@ZSymbol = z
@@ -104,19 +111,8 @@ substitute _ _ z@(ZType _) = z
 substitute _ _ z@(ZUniversal _) = z
 substitute _ _ z@(ZExistential _) = z
 
-substituteValue :: ZType -> ZType -> Typed l -> Typed l
-substituteValue _ _ e@(EUnit :@ _) = e
-substituteValue x y (ESymbol s t :@ l) = ESymbol s (substitute x y t) :@ l
-substituteValue x y (EPair l r t :@ o) =
-  EPair
-    (substituteValue x y l)
-    (substituteValue x y r)
-    (substitute x y t)
-    :@ o
-substituteValue _ _ e = bug (NotImplemented $ render (stripLocation e))
-
 solveExistential ::
-  (MonadState CheckerState m, MonadError (CheckerException l) m, Monoid l) =>
+  (MonadState CheckerState m, MonadError (CheckerException l) m) =>
   ZType ->
   Existential ->
   m ()
@@ -149,5 +145,5 @@ isWellFormed z@(ZUniversal _) (Context (_ : rs)) = isWellFormed z (Context rs)
 isWellFormed z@(ZExistential _) (Context (_ : rs)) = isWellFormed z (Context rs)
 isWellFormed z@(ZForall _ _) _ = bug (NotMonotype z)
 isWellFormed (ZValue x) ctx = isWellFormed (exprType x) ctx
-isWellFormed (ZUntyped x) _ = bug (WellFormedUntyped $ stripLocation x)
+isWellFormed (ZUntyped x) _ = bug (WellFormedUntyped x)
 isWellFormed _ (Context []) = False

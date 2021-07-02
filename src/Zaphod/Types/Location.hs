@@ -1,9 +1,4 @@
-{-# LANGUAGE DeriveFoldable #-}
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE UndecidableInstances #-}
 
 module Zaphod.Types.Location where
 
@@ -14,27 +9,37 @@ import Zaphod.Types.Class
 data LocF f l = f (LocF f l) :# l
   deriving (Functor, Foldable, Traversable)
 
-deriving instance (Show (f (LocF f l)), Show l) => Show (LocF f l)
-
-deriving instance (Eq (f (LocF f l)), Eq l) => Eq (LocF f l)
-
-instance HasLocation (LocF f) where
-  location (_ :# l) = l
-
-data LocB f t l = f t l :@ l
+data LocB f t l = f t (LocB f t l) :@ l
   deriving (Functor, Foldable, Traversable)
-
-deriving instance (Show (f t l), Show l) => Show (LocB f t l)
-
-instance Eq (f t l) => Eq (LocB f t l) where
-  a :@ _ == b :@ _ = a == b
 
 deriveBifunctor ''LocB
 deriveBifoldable ''LocB
 deriveBitraversable ''LocB
 
-instance HasLocation (LocB f t) where
+instance Location l => HasLocation (LocB e t l) where
+  type Value (LocB e t l) = e t (LocB e t l)
+  type Locat (LocB e t l) = l
   location (_ :@ l) = l
+  value (v :@ _) = v
+  withLocation = (:@)
+
+newtype LocU f t = LocU (f t (LocU f t))
+
+instance Bifunctor f => Functor (LocU f) where
+  fmap f (LocU l) = LocU (bimap f (f <$>) l)
+
+instance Bifoldable f => Foldable (LocU f) where
+  foldMap f (LocU l) = bifoldMap f (foldMap f) l
+
+instance Bitraversable f => Traversable (LocU f) where
+  traverse f (LocU l) = LocU <$> bitraverse f (traverse f) l
+
+instance HasLocation (LocU e t) where
+  type Value (LocU e t) = e t (LocU e t)
+  type Locat (LocU e t) = ()
+  location _ = ()
+  value (LocU v) = v
+  withLocation v () = LocU v
 
 errorLocation :: (Functor f, MonadError (f a) m) => a -> ExceptT (f ()) m b -> m b
 errorLocation a x = do
@@ -50,5 +55,5 @@ instance Semigroup Loc where
   Loc a _ <> Loc _ b = Loc a b
 
 instance Location Loc where
-  getBegin (Loc a _) = Loc a a
-  getEnd (Loc _ b) = Loc b b
+  locBegin (Loc a _) = Loc a a
+  locEnd (Loc _ b) = Loc b b

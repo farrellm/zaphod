@@ -1,5 +1,3 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-
 module Zaphod.Types.Wrapper where
 
 import Zaphod.Types.Class

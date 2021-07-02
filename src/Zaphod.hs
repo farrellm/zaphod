@@ -1,8 +1,6 @@
 {-# LANGUAGE ApplicativeDo #-}
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 
 module Zaphod where
 
@@ -11,7 +9,7 @@ import qualified System.Console.Haskeline as Hl
 import Text.Megaparsec (errorBundlePretty, runParser)
 import Text.Megaparsec.Pos
 import Zaphod.Base
-import Zaphod.Evaluator
+import Zaphod.Evaluator (evaluateTopLevel)
 import Zaphod.Parser (tokens)
 import Zaphod.Types
 
@@ -44,8 +42,8 @@ printError err = do
     NotList r -> putTextLn ("Expected a list, found: " <> render r)
     BadBegin r -> putTextLn ("Invalid 'begin': " <> render r)
     NativeException n -> case n of
-      TypeMismatch f x t -> do
-        printLocation (location x)
+      TypeMismatch f x l t -> do
+        printLocation l
         putTextLn
           ( "Runtime type mismatch in " <> f <> ", expecting "
               <> t
@@ -67,10 +65,10 @@ printError err = do
               <> " to "
               <> render t
           )
-      CannotApply t e -> do
-        printLocation (location e)
+      CannotApply t e l -> do
+        printLocation l
         putTextLn ("Cannot apply type " <> render t <> " to value " <> render e)
-      _ -> print (stripLocation c)
+      _ -> print c
     InvalidLambda r -> do
       printLocation (location r)
       putTextLn ("Invalid lambda: " <> render r)

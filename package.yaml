@@ -19,8 +19,21 @@ extra-source-files:
 # common to point users to the README.md file.
 description:         Please see the README on GitHub at <https://github.com/farrellm/zaphod#readme>
 
+default-extensions:
+- ConstraintKinds
+- DeriveFunctor
+- DeriveFoldable
+- DeriveTraversable
+- FlexibleContexts
+- FlexibleInstances
+- GeneralizedNewtypeDeriving
+- MultiParamTypeClasses
+- RankNTypes
+- ScopedTypeVariables
+- StandaloneDeriving
+- TypeFamilies
+
 dependencies:
-# - base-noprelude >= 4.7 && < 5
 - name: base
   version: ">= 4.7 && < 5"
   mixin:
@@ -31,6 +44,7 @@ dependencies:
 - microlens-mtl
 - microlens-th
 - megaparsec
+- mono-traversable
 - mtl
 - optparse-applicative
 - parser-combinators
