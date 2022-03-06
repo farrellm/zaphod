@@ -1,10 +1,10 @@
 cradle:
-  stack:
-    - path: "./src"
-      component: "zaphod:lib"
+  cabal:
+    - path: "src"
+      component: "lib:zaphod"
 
-    - path: "./app/Main.hs"
+    - path: "app/Main.hs"
       component: "zaphod:exe:zaphod"
 
-    - path: "./test"
+    - path: "test"
       component: "zaphod:test:zaphod-test"
