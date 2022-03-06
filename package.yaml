@@ -38,13 +38,11 @@ dependencies:
   version: ">= 4.7 && < 5"
   mixin:
     - hiding (Prelude)
-- bifunctors
 - containers
 - haskeline
 - microlens-mtl
 - microlens-th
 - megaparsec
-- mono-traversable
 - mtl
 - optparse-applicative
 - parser-combinators

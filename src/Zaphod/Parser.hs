@@ -11,8 +11,7 @@ import qualified Control.Monad.Combinators.NonEmpty as NE
 import Text.Megaparsec hiding (token, tokens)
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
-import Zaphod.Types hiding (tuple)
-import qualified Zaphod.Types as ZT
+import Zaphod.Types
 import Prelude hiding (many, some)
 
 type Parser = Parsec Void Text
@@ -83,19 +82,19 @@ symbol_ :: Parser (Raw Loc)
 symbol_ = withSourcePos $ RSymbol . Symbol <$> identifier
 
 list :: Parser (Raw Loc)
-list = ZT.tuple <$> parens (NE.some token)
+list = rawTuple <$> parens (NE.some token)
 
 tuple :: Parser (Raw Loc)
 tuple = do
   a <- getSourcePos
   ts <- brackets $ many token
-  pure (ZT.tuple ((RSymbol "tuple" :# Loc a a) :| ts))
+  pure (rawTuple ((RSymbol "tuple" :# Loc a a) :| ts))
 
 mkQuote :: Char -> Symbol -> Parser (Raw Loc)
 mkQuote c s = do
   a <- getSourcePos
   t <- char c *> token
-  pure $ ZT.tuple ((RSymbol s :# Loc a a) :| [t])
+  pure $ rawTuple ((RSymbol s :# Loc a a) :| [t])
 
 quote :: Parser (Raw Loc)
 quote = mkQuote '\'' "quote"

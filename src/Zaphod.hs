@@ -7,8 +7,8 @@ module Zaphod where
 import Options.Applicative
 import qualified System.Console.Haskeline as Hl
 import Text.Megaparsec (errorBundlePretty, runParser)
-import Text.Megaparsec.Pos
-import Zaphod.Base
+import Text.Megaparsec.Pos (sourcePosPretty)
+import Zaphod.Base (baseEnvironment)
 import Zaphod.Evaluator (evaluateTopLevel)
 import Zaphod.Parser (tokens)
 import Zaphod.Types
@@ -69,11 +69,11 @@ printError err = do
         printLocation l
         putTextLn ("Cannot apply type " <> render t <> " to value " <> render e)
       _ -> print c
-    InvalidLambda r -> do
-      printLocation (location r)
+    InvalidLambda r@(_ :# l) -> do
+      printLocation l
       putTextLn ("Invalid lambda: " <> render r)
-    InvalidMacro r -> do
-      printLocation (location r)
+    InvalidMacro r@(_ :# l) -> do
+      printLocation l
       putTextLn ("Invalid macro: " <> render r)
   where
     printLocation (Just (Loc b _)) = putStrLn (sourcePosPretty b <> ": error:")

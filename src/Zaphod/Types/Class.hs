@@ -3,6 +3,7 @@
 module Zaphod.Types.Class where
 
 import qualified Data.Text as T
+import Relude.Extra.Bifunctor (firstF)
 
 class Render a where
   render :: a -> Text
@@ -13,24 +14,12 @@ class MaybeList a where
 
 class Magma a where
   (><) :: a -> a -> a
-  tuple :: NonEmpty a -> a
 
 infixr 6 ><
 
 class Semigroup l => Location l where
   locBegin :: l -> l
   locEnd :: l -> l
-
-class Location (Locat a) => HasLocation a where
-  type Value a
-  type Locat a
-  location :: a -> Locat a
-  value :: a -> Value a
-  withLocation :: Value a -> Locat a -> a
-
-  splitLocation :: (HasLocation a) => a -> (Value a, Locat a)
-  splitLocation x = (value x, location x)
-  {-# INLINE splitLocation #-}
 
 instance Render () where
   render () = "()"
@@ -54,3 +43,33 @@ instance Location () where
 instance (Location l) => Location (Maybe l) where
   locBegin = (locBegin <$>)
   locEnd = (locEnd <$>)
+
+class Injection a b where
+  embed :: a -> b
+
+class Projection a b where
+  project :: a -> b
+
+instance (Injection a b, Functor f) => Injection (f a) (f b) where
+  {-# INLINE embed #-}
+  embed = fmap embed
+
+instance (Projection a b, Functor f) => Projection (f a) (f b) where
+  {-# INLINE project #-}
+  project = fmap project
+
+instance {-# OVERLAPPING #-} (Functor f, Bifunctor g) => Projection (f (g a b)) (f (g () b)) where
+  {-# INLINE project #-}
+  project = firstF (const ())
+
+instance Projection (a, b) b where
+  {-# INLINE project #-}
+  project = snd
+
+instance Monoid a => Injection b (a, b) where
+  {-# INLINE embed #-}
+  embed b = (mempty, b)
+
+instance {-# OVERLAPPING #-} (Functor f, Bifunctor g, Monoid a) => Injection (f (g () b)) (f (g a b)) where
+  {-# INLINE embed #-}
+  embed = firstF (const mempty)

@@ -3,18 +3,9 @@
 
 module Zaphod.Types.Raw where
 
-import Zaphod.Types.Class
-import Zaphod.Types.Location
-import Zaphod.Types.Wrapper
-
-deriving instance Show (Raw ())
-
-data RawBug
-  = NotListRaw (Raw ())
-  | RawEmptyList
-  deriving (Show)
-
-instance Exception RawBug
+import Zaphod.Types.Class (Location (..), Magma (..), MaybeList (..), Render (..))
+import Zaphod.Types.Location (LocF (..), LocU (..))
+import Zaphod.Types.Wrapper (Symbol)
 
 data RawF k
   = RUnit
@@ -24,7 +15,11 @@ data RawF k
 
 type Raw = LocF RawF
 
-deriving instance Eq (LocF RawF ())
+type Raw' = LocU RawF
+
+deriving instance Show (LocU RawF)
+
+deriving instance Eq (LocU RawF)
 
 instance Render (Raw l) where
   render (RUnit :# _) = "()"
@@ -45,10 +40,6 @@ instance MaybeList (Raw l) where
 
 instance (Location l) => Magma (Raw l) where
   x@(_ :# lx) >< y@(_ :# ly) = RPair x y :# (lx <> ly)
-  tuple (x@(_ :# l) :| xs) =
-    case nonEmpty xs of
-      Nothing -> x >< (RUnit :# locEnd l)
-      Just xs' -> x >< tuple xs'
 
 pattern RU :: Raw l
 pattern RU <- RUnit :# _
@@ -63,9 +54,8 @@ infixr 5 :.
 
 {-# COMPLETE RU, RS, (:.) #-}
 
-instance Location l => HasLocation (Raw l) where
-  type Value (Raw l) = RawF (Raw l)
-  type Locat (Raw l) = l
-  location (_ :# l) = l
-  value (v :# _) = v
-  withLocation = (:#)
+rawTuple :: Location l => NonEmpty (Raw l) -> Raw l
+rawTuple (x@(_ :# l) :| xs) =
+  case nonEmpty xs of
+    Nothing -> x >< (RUnit :# locEnd l)
+    Just xs' -> x >< rawTuple xs'

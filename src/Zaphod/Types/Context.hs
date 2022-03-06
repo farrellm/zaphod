@@ -3,9 +3,9 @@
 module Zaphod.Types.Context where
 
 import qualified Data.Text as T
-import Zaphod.Types.Class
-import Zaphod.Types.Expr
-import Zaphod.Types.Wrapper
+import Zaphod.Types.Class (Render (..))
+import Zaphod.Types.Expr (Environment, Typed', ZType)
+import Zaphod.Types.Wrapper (Existential, Universal, Variable)
 
 data LookupResult
   = RSolved ZType
@@ -19,7 +19,7 @@ data ContextEntry
   | CMarker Existential
   | CUniversal Universal
   | CVariable Variable ZType
-  | CEnvironment (Environment (Typed ()))
+  | CEnvironment (Environment Typed')
   deriving (Show)
 
 instance Render ContextEntry where

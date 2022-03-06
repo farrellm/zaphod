@@ -1,6 +1,6 @@
 module Zaphod.Types.Error where
 
-import Zaphod.Types.Expr (NativeException, Typed, Untyped, ZType)
+import Zaphod.Types.Expr (NativeException, Typed', Untyped', ZType)
 import Zaphod.Types.Raw (Raw)
 import Zaphod.Types.Wrapper (Existential, Variable)
 
@@ -14,7 +14,7 @@ instance Exception ZaphodBug
 
 data EvaluatorException l
   = NoMatches ZType
-  | MultipleMatches ZType [Typed ()]
+  | MultipleMatches ZType [Typed']
   | InvalidParameters (Raw l)
   | NotList (Raw l)
   | BadBegin (Raw l)
@@ -26,7 +26,7 @@ data EvaluatorException l
 
 data CheckerException l
   = ArgumentMissmatch [Variable] ZType
-  | CannotApply ZType (Untyped ()) l
+  | CannotApply ZType Untyped' l
   | TypeError ZType ZType l
   | NotSubtype ZType ZType l
   | UndefinedVariable Variable

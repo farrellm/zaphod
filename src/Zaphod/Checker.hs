@@ -1,8 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections #-}
 
 module Zaphod.Checker (check, synthesize, subtype) where
 
-import Data.MonoTraversable (otraverse)
 import qualified Data.Text as T
 import Lens.Micro.Mtl (use, (%=), (+=), (-=), (.=), (<<%=))
 import Zaphod.Context
@@ -11,8 +11,7 @@ import Zaphod.Types
 type MonadChecker l m =
   ( MonadState CheckerState m,
     MonadError (CheckerException l) m,
-    CTyped l,
-    CUntyped l
+    Location l
   )
 
 bind2 :: (Monad m) => (a -> b -> m c) -> m a -> m b -> m c
@@ -71,10 +70,11 @@ applyCtxType (ZForall a t) = ZForall a <$> applyCtxType t
 applyCtxType (ZValue x) = ZValue <$> applyCtxExpr x
 applyCtxType z@(ZUntyped _) = pure z
 
-applyCtxExpr :: (MonadState CheckerState m, CTyped l) => Typed l -> m (Typed l)
-applyCtxExpr (EType t :@@ l) = (:@@ l) . EType <$> applyCtxType t
-applyCtxExpr (EAnnotation e t :@@ l) = (:@@ l) <$> (EAnnotation <$> applyCtxExpr e <*> applyCtxType t)
-applyCtxExpr x = otraverse applyCtxType x
+applyCtxExpr :: (MonadState CheckerState m) => Typed l -> m (Typed l)
+applyCtxExpr (EType t :# (l, z)) = liftA2 (:#) (EType <$> applyCtxType t) ((l,) <$> applyCtxType z)
+applyCtxExpr (EAnnotation e t :# (l, z)) =
+  liftA2 (:#) (EAnnotation <$> applyCtxExpr e <*> applyCtxType t) ((l,) <$> applyCtxType z)
+applyCtxExpr (e :# (l, t)) = liftA2 (:#) (traverse applyCtxExpr e) ((l,) <$> applyCtxType t)
 
 notInFV :: Existential -> ZType -> Bool
 notInFV _ (ZType _) = True
@@ -102,17 +102,17 @@ isMonoType (ZImplicit a b) = isMonoType a && isMonoType b
 isMonoType (ZPair a b) = isMonoType a && isMonoType b
 isMonoType (ZValue v) = isMonoTypeValue v
   where
-    isMonoTypeValue (LocU (EType t)) = isMonoType t
-    isMonoTypeValue (LocU EUnit) = True
-    isMonoTypeValue (LocU (ESymbol _ t)) = isMonoType t
-    isMonoTypeValue (LocU (ELambda1 _ h _ _)) = isMonoTypeValue h
-    isMonoTypeValue (LocU (ELambdaN _ h _ _)) = isMonoTypeValue h
-    isMonoTypeValue (LocU (EImplicit _ h _ _)) = isMonoTypeValue h
-    isMonoTypeValue (LocU (EApply1 f x _)) = isMonoTypeValue f && isMonoTypeValue x
-    isMonoTypeValue (LocU (EApplyN f xs _)) = isMonoTypeValue f && all isMonoTypeValue xs
-    isMonoTypeValue (LocU (EPair l r _)) = isMonoTypeValue l && isMonoTypeValue r
-    isMonoTypeValue (LocU (EAnnotation x _)) = isMonoTypeValue x
-    isMonoTypeValue (LocU (EQuote _ _)) = True
+    isMonoTypeValue (EType z :# _) = isMonoType z
+    isMonoTypeValue (EUnit :# _) = True
+    isMonoTypeValue (ESymbol _ :# (_, t)) = isMonoType t
+    -- isMonoTypeValue (ELambda1 _ h _ :# t) = isMonoTypeValue h
+    -- isMonoTypeValue (ELambdaN _ h _ :# t) = isMonoTypeValue h
+    -- isMonoTypeValue (EImplicit _ h _ :# t) = isMonoTypeValue h
+    -- isMonoTypeValue (EApply1 f x :# t) = isMonoTypeValue f && isMonoTypeValue x
+    -- isMonoTypeValue (EApplyN f xs :# t) = isMonoTypeValue f && all isMonoTypeValue xs
+    -- isMonoTypeValue (EPair l r :# t) = isMonoTypeValue l && isMonoTypeValue r
+    -- isMonoTypeValue (EAnnotation x _ :# t) = isMonoTypeValue x
+    -- isMonoTypeValue (EQuote _ :# t) = True
     isMonoTypeValue e = bug (NotImplemented $ render e)
 isMonoType (ZForall _ _) = False
 isMonoType (ZUntyped _) = bug Unreachable
@@ -145,17 +145,17 @@ instantiateR a b =
 
 check :: (MonadChecker l m) => Untyped l -> ZType -> m (Typed l)
 check a b =
-  logInfo ("chk " <> render a <> " =: " <> render b) $
+  logInfo ("chk " <> render (project a :: Untyped') <> " =: " <> render b) $
     check' a b
 
 synthesize :: (MonadChecker l m) => Untyped l -> m (Typed l)
 synthesize a =
-  logInfo ("syn " <> render a) $
+  logInfo ("syn " <> render (project a :: Untyped')) $
     synthesize' a
 
 applySynth :: (MonadChecker l m) => ZType -> Untyped l -> m (ZType, Typed l, ZType)
 applySynth a b =
-  logInfo ("app " <> render a <> " =>> " <> render b) $
+  logInfo ("app " <> render a <> " =>> " <> render (project b :: Untyped')) $
     applySynth' a b
 
 logInfo :: (Render a, MonadState CheckerState m) => Text -> m a -> m a
@@ -312,45 +312,45 @@ instantiateR' x alphaHat = do
 
 check' :: (MonadChecker l m) => Untyped l -> ZType -> m (Typed l)
 -- 1|
-check' (EUnit :@@ l) ZUnit = pure (EUnit :@@ l)
+check' (EUnit :# l) ZUnit = pure (EUnit :# (l, ZUnit))
 -- ∀|
 check' e (ZForall alpha a) = withUniversal alpha $ e `check` a
 -- ->|
-check' (ELambda1 x e _ () :@@ l) z@(ZFunction a b) = do
+check' (ELambda1 x e _ :# l) z@(ZFunction a b) = do
   e' <- checkFunction1 x e a b
-  applyCtxExpr (ELambda1 x e' mempty z :@@ l)
-check' (ELambdaN xs e _ () :@@ l) z@(ZFunction a b)
+  applyCtxExpr (ELambda1 x e' mempty :# (l, z))
+check' (ELambdaN xs e _ :# l) z@(ZFunction a b)
   | Just cs <- maybeList a,
     length xs == length cs =
     do
       e' <- checkFunctionN xs e cs b
-      applyCtxExpr (ELambdaN xs e' mempty z :@@ l)
-check' (EImplicit x e _ () :@@ l) z@(ZImplicit a b) = do
+      applyCtxExpr (ELambdaN xs e' mempty :# (l, z))
+check' (EImplicit x e _ :# l) z@(ZImplicit a b) = do
   e' <- checkFunction1 x e a b
-  applyCtxExpr (EImplicit x e' mempty z :@@ l)
-check' (EMacro1 x e () :@@ l) z@(ZFunction a b) = do
+  applyCtxExpr (EImplicit x e' mempty :# (l, z))
+check' (EMacro1 x e :# l) z@(ZFunction a b) = do
   e'' <- checkFunction1 x e a b
-  applyCtxExpr (EMacro1 x e'' z :@@ l)
-check' (EMacroN xs e () :@@ l) z@(ZFunction a b)
+  applyCtxExpr (EMacro1 x e'' :# (l, z))
+check' (EMacroN xs e :# l) z@(ZFunction a b)
   | Just cs <- maybeList a,
     length xs == length cs =
     do
       e' <- checkFunctionN xs e cs b
-      applyCtxExpr (EMacroN xs e' z :@@ l)
-check' (ENative _ () :@@ _) _ = bug Unreachable
-check' (ENative' _ () :@@ _) _ = bug Unreachable
-check' (ENativeIO _ () :@@ _) _ = bug Unreachable
-check' (ESpecial () :@@ _) _ = bug Unreachable
+      applyCtxExpr (EMacroN xs e' :# (l, z))
+check' (ENative _ :# _) _ = bug Unreachable
+check' (ENative' _ :# _) _ = bug Unreachable
+check' (ENativeIO _ :# _) _ = bug Unreachable
+check' (ESpecial :# _) _ = bug Unreachable
 -- ->Pair
-check' (EPair e1 e2 () :@@ l) (ZPair b1 b2) = do
+check' (EPair e1 e2 :# l) (ZPair b1 b2) = do
   a1' <- e1 `check` b1
   a2' <- e2 `check` b2
-  applyCtxExpr (EPair a1' a2' (ZPair (exprType a1') (exprType a2')) :@@ l)
+  applyCtxExpr (EPair a1' a2' :# (l, ZPair (exprType a1') (exprType a2')))
 -- Sub
-check' e b = do
+check' e@(_ :# l) b = do
   a <- synthesize e
   b' <- applyCtxType b
-  mapError (const (location e) <$>) $ exprType a `subtype` b'
+  mapError (const l <$>) $ exprType a `subtype` b'
   applyCtxExpr a
 
 checkFunction1 :: (MonadChecker l m) => Variable -> Untyped l -> ZType -> ZType -> m (Typed l)
@@ -369,56 +369,56 @@ checkFunctionN xs e cs b = do
     context %= dropVar x
   pure e'
 
-synthesize' :: (MonadChecker l m) => Untyped l -> m (Typed l)
+synthesize' :: forall l m. (MonadChecker l m) => Untyped l -> m (Typed l)
 -- Var
-synthesize' (ESymbol a () :@@ l) = do
+synthesize' (ESymbol a :# l) = do
   ctx <- use context
   case lookupVar (Variable a) ctx of
-    Just t -> pure (ESymbol a t :@@ l)
+    Just t -> pure (ESymbol a :# (l, t))
     Nothing -> throwError $ UndefinedVariable (Variable a)
 -- Anno
-synthesize' (EAnnotation e a :@@ l) = do
+synthesize' (EAnnotation e a :# l) = do
   e' <- e `check` a
-  applyCtxExpr (EAnnotation e' a :@@ l)
+  applyCtxExpr (EAnnotation e' a :# (l, a))
 -- 1|=>
-synthesize' (EUnit :@@ l) = pure (EUnit :@@ l)
+synthesize' (EUnit :# l) = pure (EUnit :# (l, ZUnit))
 -- ->|=>
-synthesize' (ELambda1 x e _ () :@@ l) = do
+synthesize' (ELambda1 x e _ :# l) = do
   (e', alphaHat, betaHat) <- synthesizeFunction1 x e
-  applyCtxExpr (ELambda1 x e' mempty (ZFunction alphaHat betaHat) :@@ l)
-synthesize' (ELambdaN xs e _ () :@@ l) = do
+  applyCtxExpr (ELambda1 x e' mempty :# (l, ZFunction alphaHat betaHat))
+synthesize' (ELambdaN xs e _ :# l) = do
   (e', alphaHats, betaHat) <- synthesizeFunctionN xs e
-  applyCtxExpr (ELambdaN xs e' mempty (ZFunction (typeTuple alphaHats) betaHat) :@@ l)
-synthesize' (EImplicit x e _ () :@@ l) = do
+  applyCtxExpr (ELambdaN xs e' mempty :# (l, ZFunction (typeTuple alphaHats) betaHat))
+synthesize' (EImplicit x e _ :# l) = do
   (e', alphaHat, betaHat) <- synthesizeFunction1 x e
-  applyCtxExpr (EImplicit x e' mempty (ZImplicit alphaHat betaHat) :@@ l)
-synthesize' (EMacro1 x e () :@@ l) = do
+  applyCtxExpr (EImplicit x e' mempty :# (l, ZImplicit alphaHat betaHat))
+synthesize' (EMacro1 x e :# l) = do
   (e', alphaHat, betaHat) <- synthesizeFunction1 x e
-  applyCtxExpr (EMacro1 x e' (ZFunction alphaHat betaHat) :@@ l)
-synthesize' (EMacroN xs e () :@@ l) = do
+  applyCtxExpr (EMacro1 x e' :# (l, ZFunction alphaHat betaHat))
+synthesize' (EMacroN xs e :# l) = do
   (e', alphaHats, betaHat) <- synthesizeFunctionN xs e
-  applyCtxExpr (EMacroN xs e' (ZFunction (typeTuple alphaHats) betaHat) :@@ l)
-synthesize' (ENative _ () :@@ _) = bug Unreachable
-synthesize' (ENative' _ () :@@ _) = bug Unreachable
-synthesize' (ENativeIO _ () :@@ _) = bug Unreachable
-synthesize' (ESpecial () :@@ _) = bug Unreachable
+  applyCtxExpr (EMacroN xs e' :# (l, ZFunction (typeTuple alphaHats) betaHat))
+synthesize' (ENative _ :# _) = bug Unreachable
+synthesize' (ENative' _ :# _) = bug Unreachable
+synthesize' (ENativeIO _ :# _) = bug Unreachable
+synthesize' (ESpecial :# _) = bug Unreachable
 -- ->E
-synthesize' (EApply1 e1 e2 () :@@ l) = do
+synthesize' (EApply1 e1 e2 :# l) = do
   e1' <- synthesize e1
   (ze1'', e2', c) <- exprType e1' `applySynth` e2
-  applyCtxExpr (EApply1 (setType ze1'' e1') e2' c :@@ l)
-synthesize' (EApplyN e1 e2s () :@@ l) = do
+  applyCtxExpr (EApply1 (setType ze1'' e1') e2' :# (l, c))
+synthesize' (EApplyN e1 e2s :# l) = do
   e1' <- synthesize e1
-  (ze1'', e2', c) <- exprType e1' `applySynth` tuple e2s
+  (ze1'', e2', c) <- exprType e1' `applySynth` untypedTuple e2s
   case nonEmpty =<< maybeList e2' of
-    Just e2s' -> applyCtxExpr (EApplyN (setType ze1'' e1') e2s' c :@@ l)
+    Just e2s' -> applyCtxExpr (EApplyN (setType ze1'' e1') e2s' :# (l, c))
     Nothing -> bug Unreachable
-synthesize' (EPair l r () :@@ loc) = do
+synthesize' (EPair l r :# loc) = do
   l' <- synthesize l
   r' <- synthesize r
-  pure (EPair l' r' (ZPair (exprType l') (exprType r')) :@@ loc)
+  pure (EPair l' r' :# (loc, ZPair (exprType l') (exprType r')))
 -- Type
-synthesize' (EType m :@@ l) = (:@@ l) . EType <$> synthesizeType m
+synthesize' (EType m :# l) = (:# (l, ZType 0)) . EType <$> synthesizeType m
   where
     synthesizeType (ZForall u@(Universal s) t) = do
       k <- ZExistential <$> nextExtential
@@ -439,21 +439,21 @@ synthesize' (EType m :@@ l) = (:@@ l) . EType <$> synthesizeType m
       a' <- synthesizeType a
       b' <- synthesizeType b
       pure (ZPair a' b')
-    synthesizeType (ZUntyped e) = unwrapType . stripLocation <$> synthesize (setLocation l e)
+    synthesizeType (ZUntyped e) = unwrapType <$> synthesize (setLocation' l e)
     synthesizeType (ZValue _) = bug Unreachable
     synthesizeType z = pure z
 -- Quote
-synthesize' (EQuote x () :@@ lq) =
+synthesize' (EQuote x :# lq) =
   let z = synthesizeQuoted x
-   in pure (EQuote z (exprType z) :@@ lq)
+   in pure (EQuote z :# (lq, exprType z))
   where
-    synthesizeQuoted (EType n :@@ loc) = EType n :@@ loc
-    synthesizeQuoted (EUnit :@@ loc) = EUnit :@@ loc
-    synthesizeQuoted (ESymbol s () :@@ loc) = ESymbol s ZSymbol :@@ loc
-    synthesizeQuoted (EPair l r () :@@ loc) =
+    synthesizeQuoted (EType n :# loc) = EType n :# (loc, ZType 0)
+    synthesizeQuoted (EUnit :# loc) = EUnit :# (loc, ZUnit)
+    synthesizeQuoted (ESymbol s :# loc) = ESymbol s :# (loc, ZSymbol)
+    synthesizeQuoted (EPair l r :# loc) =
       let l' = synthesizeQuoted l
           r' = synthesizeQuoted r
-       in EPair l' r' (ZPair (exprType l') (exprType r')) :@@ loc
+       in EPair l' r' :# (loc, ZPair (exprType l') (exprType r'))
     synthesizeQuoted _ = bug Unreachable
 
 synthesizeFunction1 :: (MonadChecker l m) => Variable -> Untyped l -> m (Typed l, ZType, ZType)
@@ -507,4 +507,4 @@ applySynth' (ZImplicit a c) e = do
   a' <- applyCtxType a
   pure (ZImplicit a' f', e', c')
 --
-applySynth' t e = throwError $ CannotApply t (stripLocation e) (location e)
+applySynth' t e@(_ :# l) = throwError $ CannotApply t (project e) l

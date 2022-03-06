@@ -24,7 +24,7 @@ data ContextBug
   | MissingExistentialInContext Existential
   | UnexpectedExistentialInSolve Existential Existential
   | NotMonotype ZType
-  | WellFormedUntyped (Untyped ())
+  | WellFormedUntyped Untyped'
   deriving (Show)
 
 instance Exception ContextBug
@@ -58,7 +58,7 @@ lookupVar t (Context es) = go es
     go (CVariable k v : _)
       | k == t = Just v
     go (CEnvironment env : rs) = case env !? getVariable t of
-      Just v -> Just $ exprType v
+      Just v -> Just $ exprType' v
       Nothing -> go rs
     go (_ : rs) = go rs
 
@@ -94,14 +94,12 @@ substitute x y (ZImplicit a b) = ZImplicit (substitute x y a) (substitute x y b)
 substitute x y (ZPair a b) = ZPair (substitute x y a) (substitute x y b)
 substitute x y (ZValue e) = ZValue (substituteValue e)
   where
-    substituteValue z@(LocU EUnit) = z
-    substituteValue (LocU (ESymbol s t)) = LocU $ ESymbol s (substitute x y t)
-    substituteValue (LocU (EPair l r t)) =
-      LocU $
-        EPair
-          (substituteValue l)
-          (substituteValue r)
-          (substitute x y t)
+    substituteValue :: Typed () -> Typed ()
+    substituteValue z@(EUnit :# _) = z
+    substituteValue ((ESymbol s) :# ((), t)) =
+      ESymbol s :# ((), substitute x y t)
+    substituteValue ((EPair a b) :# ((), t)) =
+      EPair (substituteValue a) (substituteValue b) :# ((), substitute x y t)
     substituteValue z = bug (NotImplemented $ render z)
 substitute _ _ t@(ZUntyped _) = bug (NotImplemented $ render t)
 substitute _ _ z@ZUnit = z

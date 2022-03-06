@@ -3,9 +3,9 @@
 module Zaphod.Test where
 
 import Text.Megaparsec (errorBundlePretty, parse)
-import Zaphod
-import Zaphod.Checker
-import Zaphod.Evaluator
+import Zaphod (emptyZState, printError, runFile)
+import Zaphod.Checker (synthesize)
+import Zaphod.Evaluator (analyzeUntyped, evaluate, liftChecker, macroExpand)
 import Zaphod.Parser (token)
 import Zaphod.Types
 
