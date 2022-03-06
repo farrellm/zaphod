@@ -216,3 +216,12 @@
        (instance' (fst (fst d))
                   (fst (snd (fst d)))
                   (cdr d))))
+
+(class (Eq a)
+       (== (-> [a a] Bool)))
+
+(instance (Eq ())
+          (== (lambda (_ _) True)))
+
+(instance (Eq Symbol)
+          (== symbol-eq))
