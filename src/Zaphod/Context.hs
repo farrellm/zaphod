@@ -23,13 +23,12 @@ data ContextBug
   | MissingVarInContext Variable
   | MissingExistentialInContext Existential
   | UnexpectedExistentialInSolve Existential Existential
-  | NotMonotype ZType
-  | WellFormedUntyped Untyped'
+  | NotMonotype (ZType Typed')
   deriving (Show)
 
 instance Exception ContextBug
 
-wind :: Existential -> Context -> (Hole, Context)
+wind :: Existential -> Context l -> (Hole l, Context l)
 wind e (Context cs) =
   let (l, r) = go cs []
    in (Hole e r, Context l)
@@ -38,10 +37,10 @@ wind e (Context cs) =
     go (CUnsolved f : ds) rs | e == f = (ds, rs)
     go (d : ds) rs = go ds (d : rs)
 
-unwind :: Hole -> Context -> Context
+unwind :: Hole l -> Context l -> Context l
 unwind (Hole e rs) (Context es) = Context (flipfoldl' (:) (CUnsolved e : es) rs)
 
-lookupType :: Existential -> Context -> LookupResult
+lookupType :: Existential -> Context l -> LookupResult l
 lookupType t (Context es) = go es
   where
     go [] = RMissing
@@ -51,42 +50,42 @@ lookupType t (Context es) = go es
       | k == t = RSolved v
     go (_ : rs) = go rs
 
-lookupVar :: Variable -> Context -> Maybe ZType
+lookupVar :: Variable -> Context l -> Maybe (ZType (Typed l))
 lookupVar t (Context es) = go es
   where
     go [] = Nothing
     go (CVariable k v : _)
       | k == t = Just v
     go (CEnvironment env : rs) = case env !? getVariable t of
-      Just v -> Just $ exprType' v
+      Just v -> Just $ exprType v
       Nothing -> go rs
     go (_ : rs) = go rs
 
-(<:) :: ContextEntry -> Context -> Context
+(<:) :: ContextEntry l -> Context l -> Context l
 e <: Context cs = Context (e : cs)
 
-dropMarker :: Existential -> Context -> Context
+dropMarker :: Existential -> Context l -> Context l
 dropMarker a (Context es) = Context $ go es
   where
     go (CMarker b : rs) | a == b = rs
     go (_ : rs) = go rs
     go [] = bug $ MissingMarkerInContext a
 
-dropUniversal :: Universal -> Context -> Context
+dropUniversal :: Universal -> Context l -> Context l
 dropUniversal a (Context es) = Context $ go es
   where
     go (CUniversal b : rs) | a == b = rs
     go (_ : rs) = go rs
     go [] = bug $ MissingUniversalInContext a
 
-dropVar :: Variable -> Context -> Context
+dropVar :: Variable -> Context l -> Context l
 dropVar a (Context es) = Context $ go es
   where
     go (CVariable b _ : rs) | a == b = rs
     go (_ : rs) = go rs
     go [] = bug $ MissingVarInContext a
 
-substitute :: ZType -> ZType -> ZType -> ZType
+substitute :: forall l. ZType (Typed l) -> ZType (Typed l) -> ZType (Typed l) -> ZType (Typed l)
 substitute x y z | z == y = x
 substitute x y (ZForall beta b) = ZForall beta (substitute x y b)
 substitute x y (ZFunction a b) = ZFunction (substitute x y a) (substitute x y b)
@@ -94,14 +93,13 @@ substitute x y (ZImplicit a b) = ZImplicit (substitute x y a) (substitute x y b)
 substitute x y (ZPair a b) = ZPair (substitute x y a) (substitute x y b)
 substitute x y (ZValue e) = ZValue (substituteValue e)
   where
-    substituteValue :: Typed () -> Typed ()
-    substituteValue z@(EUnit :# _) = z
-    substituteValue ((ESymbol s) :# ((), t)) =
-      ESymbol s :# ((), substitute x y t)
-    substituteValue ((EPair a b) :# ((), t)) =
-      EPair (substituteValue a) (substituteValue b) :# ((), substitute x y t)
+    substituteValue :: Typed l -> Typed l
+    substituteValue z@(EUnit :@ _) = z
+    substituteValue (ESymbol s :@ (l, t)) =
+      ESymbol s :@ (l, substitute x y t)
+    substituteValue ((EPair a b) :@ (l, t)) =
+      EPair (substituteValue a) (substituteValue b) :@ (l, substitute x y t)
     substituteValue z = bug (NotImplemented $ render z)
-substitute _ _ t@(ZUntyped _) = bug (NotImplemented $ render t)
 substitute _ _ z@ZUnit = z
 substitute _ _ z@ZSymbol = z
 substitute _ _ z@ZAny = z
@@ -110,8 +108,8 @@ substitute _ _ z@(ZUniversal _) = z
 substitute _ _ z@(ZExistential _) = z
 
 solveExistential ::
-  (MonadState CheckerState m, MonadError (CheckerException l) m) =>
-  ZType ->
+  (MonadState (CheckerState l) m, MonadError (CheckerException l) m) =>
+  ZType (Typed l) ->
   Existential ->
   m ()
 solveExistential z e = do
@@ -120,7 +118,7 @@ solveExistential z e = do
   where
     go (CUnsolved f : rs) | e == f = pure $ CSolved f z : rs
     go (CSolved f y : _)
-      | e == f = throwError $ ExistentialAlreadySolved z f y
+      | e == f = throwError $ ExistentialAlreadySolved (project z) f (project y)
     go (CSolved f q : rs) =
       (CSolved f ((z `substitute` ZExistential e) q) :) <$> go rs
     go (CVariable x q : rs) =
@@ -128,7 +126,7 @@ solveExistential z e = do
     go (r : rs) = (r :) <$> go rs
     go [] = bug $ MissingExistentialInContext e
 
-isWellFormed :: ZType -> Context -> Bool
+isWellFormed :: ZType (Typed l) -> Context l -> Bool
 isWellFormed (ZType _) _ = True
 isWellFormed ZAny _ = True
 isWellFormed ZUnit _ = True
@@ -141,7 +139,6 @@ isWellFormed (ZExistential a) (Context (CUnsolved b : _)) | a == b = True
 isWellFormed (ZExistential a) (Context (CSolved b _ : _)) | a == b = True
 isWellFormed z@(ZUniversal _) (Context (_ : rs)) = isWellFormed z (Context rs)
 isWellFormed z@(ZExistential _) (Context (_ : rs)) = isWellFormed z (Context rs)
-isWellFormed z@(ZForall _ _) _ = bug (NotMonotype z)
+isWellFormed z@(ZForall _ _) _ = bug (NotMonotype $ project z)
 isWellFormed (ZValue x) ctx = isWellFormed (exprType x) ctx
-isWellFormed (ZUntyped x) _ = bug (WellFormedUntyped x)
 isWellFormed _ (Context []) = False

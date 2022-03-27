@@ -20,12 +20,12 @@ data ZaphodOptions = ZaphodOptions
   }
   deriving (Show)
 
-type Zaphod = StateT ZState (ExceptT (EvaluatorException (Maybe Loc)) IO)
+type Zaphod = StateT (ZState (Maybe Loc)) (ExceptT (EvaluatorException (Maybe Loc)) IO)
 
-emptyZState :: ZState
+emptyZState :: ZState (Maybe Loc)
 emptyZState =
   ZState
-    { _environment = baseEnvironment
+    { _environment = embed <$> baseEnvironment
     }
 
 printError :: (MonadIO m) => EvaluatorException (Maybe Loc) -> m ()

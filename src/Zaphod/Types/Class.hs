@@ -58,10 +58,6 @@ instance (Projection a b, Functor f) => Projection (f a) (f b) where
   {-# INLINE project #-}
   project = fmap project
 
-instance {-# OVERLAPPING #-} (Functor f, Bifunctor g) => Projection (f (g a b)) (f (g () b)) where
-  {-# INLINE project #-}
-  project = firstF (const ())
-
 instance Projection (a, b) b where
   {-# INLINE project #-}
   project = snd
@@ -70,6 +66,6 @@ instance Monoid a => Injection b (a, b) where
   {-# INLINE embed #-}
   embed b = (mempty, b)
 
-instance {-# OVERLAPPING #-} (Functor f, Bifunctor g, Monoid a) => Injection (f (g () b)) (f (g a b)) where
+instance (Functor f, Bifunctor g, Monoid a) => Injection (f (g () b)) (f (g a b)) where
   {-# INLINE embed #-}
   embed = firstF (const mempty)

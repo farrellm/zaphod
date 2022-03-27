@@ -21,6 +21,9 @@ deriving instance Show (LocU RawF)
 
 deriving instance Eq (LocU RawF)
 
+instance Eq (Raw l) where
+  (a :# _) == (b :# _) = a == b
+
 instance Render (Raw l) where
   render (RUnit :# _) = "()"
   render (RSymbol s :# _) = render s

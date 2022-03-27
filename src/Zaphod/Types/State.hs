@@ -3,18 +3,18 @@
 module Zaphod.Types.State where
 
 import Lens.Micro.TH (makeLenses)
-import Zaphod.Types.Context
-import Zaphod.Types.Expr (Environment, Typed')
+import Zaphod.Types.Context (Context (..), ContextEntry (CEnvironment))
+import Zaphod.Types.Expr (Environment, Typed)
 
-newtype ZState = ZState
-  { _environment :: Environment Typed'
+newtype ZState l = ZState
+  { _environment :: Environment (Typed l)
   }
   deriving (Show)
 
 makeLenses ''ZState
 
-data CheckerState = CheckerState
-  { _context :: !Context,
+data CheckerState l = CheckerState
+  { _context :: !(Context l),
     _existentialData :: !Char,
     _depth :: !Int
   }
@@ -22,7 +22,7 @@ data CheckerState = CheckerState
 
 makeLenses ''CheckerState
 
-emptyCheckerState :: Environment Typed' -> CheckerState
+emptyCheckerState :: Environment (Typed l) -> CheckerState l
 emptyCheckerState env =
   CheckerState
     { _context = Context [CEnvironment env],

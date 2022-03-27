@@ -9,8 +9,9 @@ import Zaphod.Context
 import Zaphod.Types
 
 type MonadChecker l m =
-  ( MonadState CheckerState m,
+  ( MonadState (CheckerState l) m,
     MonadError (CheckerException l) m,
+    Monoid l,
     Location l
   )
 
@@ -20,14 +21,14 @@ bind2 f x y = do
   y' <- y
   f x' y'
 
-nextExtential :: (MonadState CheckerState m) => m Existential
+nextExtential :: (MonadState (CheckerState l) m) => m Existential
 nextExtential = do
   c <- existentialData <<%= next
   let n = Existential $ fromString [c]
   context %= (CUnsolved n <:)
   pure n
 
-markExtential :: (MonadState CheckerState m) => (Existential -> m a) -> m a
+markExtential :: (MonadState (CheckerState l) m) => (Existential -> m a) -> m a
 markExtential x = do
   c <- existentialData <<%= next
   let n = Existential $ fromString [c]
@@ -37,7 +38,7 @@ markExtential x = do
   context %= dropMarker n
   pure res
 
-withHole :: (MonadState CheckerState m) => Existential -> m a -> m a
+withHole :: (MonadState (CheckerState l) m) => Existential -> m a -> m a
 withHole e x = do
   (h, ctx) <- wind e <$> use context
   context .= ctx
@@ -45,14 +46,14 @@ withHole e x = do
   context %= unwind h
   pure res
 
-withUniversal :: (MonadState CheckerState m) => Universal -> m a -> m a
+withUniversal :: (MonadState (CheckerState l) m) => Universal -> m a -> m a
 withUniversal alpha x = do
   context %= (CUniversal alpha <:)
   res <- x
   context %= dropUniversal alpha
   pure res
 
-applyCtxType :: (MonadState CheckerState m) => ZType -> m ZType
+applyCtxType :: (MonadState (CheckerState l) m) => ZType (Typed l) -> m (ZType (Typed l))
 applyCtxType z@(ZType _) = pure z
 applyCtxType ZAny = pure ZAny
 applyCtxType z@(ZUniversal _) = pure z
@@ -68,15 +69,14 @@ applyCtxType (ZImplicit a b) = ZImplicit <$> applyCtxType a <*> applyCtxType b
 applyCtxType (ZPair a b) = ZPair <$> applyCtxType a <*> applyCtxType b
 applyCtxType (ZForall a t) = ZForall a <$> applyCtxType t
 applyCtxType (ZValue x) = ZValue <$> applyCtxExpr x
-applyCtxType z@(ZUntyped _) = pure z
 
-applyCtxExpr :: (MonadState CheckerState m) => Typed l -> m (Typed l)
-applyCtxExpr (EType t :# (l, z)) = liftA2 (:#) (EType <$> applyCtxType t) ((l,) <$> applyCtxType z)
-applyCtxExpr (EAnnotation e t :# (l, z)) =
-  liftA2 (:#) (EAnnotation <$> applyCtxExpr e <*> applyCtxType t) ((l,) <$> applyCtxType z)
-applyCtxExpr (e :# (l, t)) = liftA2 (:#) (traverse applyCtxExpr e) ((l,) <$> applyCtxType t)
+applyCtxExpr :: (MonadState (CheckerState l) m) => Typed l -> m (Typed l)
+applyCtxExpr (EType t :@ (l, z)) = liftA2 (:@) (EType <$> applyCtxType t) ((l,) <$> applyCtxType z)
+applyCtxExpr (EAnnotation e t :@ (l, z)) =
+  liftA2 (:@) (EAnnotation <$> applyCtxExpr e <*> applyCtxType t) ((l,) <$> applyCtxType z)
+applyCtxExpr (e :@ (l, t)) = liftA2 (:@) (traverse applyCtxExpr e) ((l,) <$> applyCtxType t)
 
-notInFV :: Existential -> ZType -> Bool
+notInFV :: Existential -> ZType (Typed l) -> Bool
 notInFV _ (ZType _) = True
 notInFV _ ZAny = True
 notInFV _ ZUnit = True
@@ -88,9 +88,8 @@ notInFV a (ZImplicit b c) = notInFV a b && notInFV a c
 notInFV a (ZPair b c) = notInFV a b && notInFV a c
 notInFV _ ZSymbol = True
 notInFV a (ZValue x) = notInFV a (exprType x)
-notInFV _ (ZUntyped _) = bug Unreachable
 
-isMonoType :: ZType -> Bool
+isMonoType :: ZType (Typed l) -> Bool
 isMonoType ZAny = True
 isMonoType ZUnit = True
 isMonoType ZSymbol = True
@@ -102,22 +101,21 @@ isMonoType (ZImplicit a b) = isMonoType a && isMonoType b
 isMonoType (ZPair a b) = isMonoType a && isMonoType b
 isMonoType (ZValue v) = isMonoTypeValue v
   where
-    isMonoTypeValue (EType z :# _) = isMonoType z
-    isMonoTypeValue (EUnit :# _) = True
-    isMonoTypeValue (ESymbol _ :# (_, t)) = isMonoType t
-    -- isMonoTypeValue (ELambda1 _ h _ :# t) = isMonoTypeValue h
-    -- isMonoTypeValue (ELambdaN _ h _ :# t) = isMonoTypeValue h
-    -- isMonoTypeValue (EImplicit _ h _ :# t) = isMonoTypeValue h
-    -- isMonoTypeValue (EApply1 f x :# t) = isMonoTypeValue f && isMonoTypeValue x
-    -- isMonoTypeValue (EApplyN f xs :# t) = isMonoTypeValue f && all isMonoTypeValue xs
-    -- isMonoTypeValue (EPair l r :# t) = isMonoTypeValue l && isMonoTypeValue r
-    -- isMonoTypeValue (EAnnotation x _ :# t) = isMonoTypeValue x
-    -- isMonoTypeValue (EQuote _ :# t) = True
+    isMonoTypeValue (EType z :@ _) = isMonoType z
+    isMonoTypeValue (EUnit :@ _) = True
+    isMonoTypeValue (ESymbol _ :@ (_, t)) = isMonoType t
+    -- isMonoTypeValue (ELambda1 _ h _ :@ t) = isMonoTypeValue h
+    -- isMonoTypeValue (ELambdaN _ h _ :@ t) = isMonoTypeValue h
+    -- isMonoTypeValue (EImplicit _ h _ :@ t) = isMonoTypeValue h
+    -- isMonoTypeValue (EApply1 f x :@ t) = isMonoTypeValue f && isMonoTypeValue x
+    -- isMonoTypeValue (EApplyN f xs :@ t) = isMonoTypeValue f && all isMonoTypeValue xs
+    -- isMonoTypeValue (EPair l r :@ t) = isMonoTypeValue l && isMonoTypeValue r
+    -- isMonoTypeValue (EAnnotation x _ :@ t) = isMonoTypeValue x
+    -- isMonoTypeValue (EQuote _ :@ t) = True
     isMonoTypeValue e = bug (NotImplemented $ render e)
 isMonoType (ZForall _ _) = False
-isMonoType (ZUntyped _) = bug Unreachable
 
-isDeeper :: (MonadState CheckerState m) => ZType -> Existential -> m Bool
+isDeeper :: (MonadState (CheckerState l) m) => ZType (Typed l) -> Existential -> m Bool
 isDeeper tau alphaHat = do
   ctx <- _context <$> get
   let ctx' = dropExistential ctx
@@ -128,37 +126,37 @@ isDeeper tau alphaHat = do
     dropExistential (Context (CUnsolved b : rs)) | alphaHat == b = Context rs
     dropExistential (Context (_ : rs)) = dropExistential $ Context rs
 
-subtype :: (MonadChecker () m) => ZType -> ZType -> m ()
+subtype :: (MonadChecker l m) => ZType (Typed l) -> ZType (Typed l) -> m ()
 subtype a b =
   logInfo ("sub " <> render a <> " <: " <> render b) $
     subtype' a b
 
-instantiateL :: (MonadChecker l m) => Existential -> ZType -> m ()
+instantiateL :: (MonadChecker l m) => Existential -> ZType (Typed l) -> m ()
 instantiateL a b =
   logInfo ("inL " <> render a <> " =: " <> render b) $
     instantiateL' a b
 
-instantiateR :: (MonadChecker l m) => ZType -> Existential -> m ()
+instantiateR :: (MonadChecker l m) => ZType (Typed l) -> Existential -> m ()
 instantiateR a b =
   logInfo ("inR " <> render a <> " := " <> render b) $
     instantiateR' a b
 
-check :: (MonadChecker l m) => Untyped l -> ZType -> m (Typed l)
+check :: (MonadChecker l m) => Untyped l -> ZType (Typed l) -> m (Typed l)
 check a b =
-  logInfo ("chk " <> render (project a :: Untyped') <> " =: " <> render b) $
+  logInfo ("chk " <> render a <> " =: " <> render b) $
     check' a b
 
 synthesize :: (MonadChecker l m) => Untyped l -> m (Typed l)
 synthesize a =
-  logInfo ("syn " <> render (project a :: Untyped')) $
+  logInfo ("syn " <> render a) $
     synthesize' a
 
-applySynth :: (MonadChecker l m) => ZType -> Untyped l -> m (ZType, Typed l, ZType)
+applySynth :: (MonadChecker l m) => ZType (Typed l) -> Untyped l -> m (ZType (Typed l), Typed l, ZType (Typed l))
 applySynth a b =
-  logInfo ("app " <> render a <> " =>> " <> render (project b :: Untyped')) $
+  logInfo ("app " <> render a <> " =>> " <> render b) $
     applySynth' a b
 
-logInfo :: (Render a, MonadState CheckerState m) => Text -> m a -> m a
+logInfo :: (Render a, MonadState (CheckerState l) m) => Text -> m a -> m a
 logInfo m x = do
   i <- mkIndent
   ctx <- use context
@@ -172,10 +170,10 @@ logInfo m x = do
   traceM' (i <> "     " <> render ctx')
   pure res
   where
-    mkIndent :: (MonadState CheckerState m) => m Text
+    mkIndent :: (MonadState (CheckerState l) m) => m Text
     mkIndent = flip T.replicate "| " <$> use depth
 
-subtype' :: (MonadChecker () m) => ZType -> ZType -> m ()
+subtype' :: (MonadChecker l m) => ZType (Typed l) -> ZType (Typed l) -> m ()
 -- <:Any
 subtype' _ ZAny = pass
 -- <:Var
@@ -213,15 +211,14 @@ subtype' (ZType m) (ZType n) | m == n = pass
 -- <:Value
 subtype' (ZValue a) (ZValue b) | a == b = pass
 --
-subtype' a b = throwError $ NotSubtype a b ()
+subtype' a b = throwError $ NotSubtype (project a) (project b) mempty
 
-instantiateL' :: (MonadChecker l m) => Existential -> ZType -> m ()
+instantiateL' :: (MonadChecker l m) => Existential -> ZType (Typed l) -> m ()
 instantiateL' alphaHat x = do
   d <-
     if isMonoType x
       then isDeeper x alphaHat
       else pure False
-  -- traceShowM d
   go d x
   where
     -- InstLSolve
@@ -263,7 +260,7 @@ instantiateL' alphaHat x = do
       (`instantiateR` alphaHat1) =<< applyCtxType a1
       (alphaHat2 `instantiateL`) =<< applyCtxType a2
 
-instantiateR' :: (MonadChecker l m) => ZType -> Existential -> m ()
+instantiateR' :: (MonadChecker l m) => ZType (Typed l) -> Existential -> m ()
 instantiateR' x alphaHat = do
   d <-
     if isMonoType x
@@ -310,33 +307,33 @@ instantiateR' x alphaHat = do
       (alphaHat1 `instantiateL`) =<< applyCtxType a1
       (`instantiateR` alphaHat2) =<< applyCtxType a2
 
-check' :: (MonadChecker l m) => Untyped l -> ZType -> m (Typed l)
+check' :: (MonadChecker l m) => Untyped l -> ZType (Typed l) -> m (Typed l)
 -- 1|
-check' (EUnit :# l) ZUnit = pure (EUnit :# (l, ZUnit))
+check' (EUnit :# l) ZUnit = pure (EUnit :@ (l, ZUnit))
 -- ∀|
 check' e (ZForall alpha a) = withUniversal alpha $ e `check` a
 -- ->|
 check' (ELambda1 x e _ :# l) z@(ZFunction a b) = do
   e' <- checkFunction1 x e a b
-  applyCtxExpr (ELambda1 x e' mempty :# (l, z))
+  applyCtxExpr (ELambda1 x e' mempty :@ (l, z))
 check' (ELambdaN xs e _ :# l) z@(ZFunction a b)
   | Just cs <- maybeList a,
     length xs == length cs =
     do
       e' <- checkFunctionN xs e cs b
-      applyCtxExpr (ELambdaN xs e' mempty :# (l, z))
+      applyCtxExpr (ELambdaN xs e' mempty :@ (l, z))
 check' (EImplicit x e _ :# l) z@(ZImplicit a b) = do
   e' <- checkFunction1 x e a b
-  applyCtxExpr (EImplicit x e' mempty :# (l, z))
+  applyCtxExpr (EImplicit x e' mempty :@ (l, z))
 check' (EMacro1 x e :# l) z@(ZFunction a b) = do
   e'' <- checkFunction1 x e a b
-  applyCtxExpr (EMacro1 x e'' :# (l, z))
+  applyCtxExpr (EMacro1 x e'' :@ (l, z))
 check' (EMacroN xs e :# l) z@(ZFunction a b)
   | Just cs <- maybeList a,
     length xs == length cs =
     do
       e' <- checkFunctionN xs e cs b
-      applyCtxExpr (EMacroN xs e' :# (l, z))
+      applyCtxExpr (EMacroN xs e' :@ (l, z))
 check' (ENative _ :# _) _ = bug Unreachable
 check' (ENative' _ :# _) _ = bug Unreachable
 check' (ENativeIO _ :# _) _ = bug Unreachable
@@ -345,7 +342,7 @@ check' (ESpecial :# _) _ = bug Unreachable
 check' (EPair e1 e2 :# l) (ZPair b1 b2) = do
   a1' <- e1 `check` b1
   a2' <- e2 `check` b2
-  applyCtxExpr (EPair a1' a2' :# (l, ZPair (exprType a1') (exprType a2')))
+  applyCtxExpr (EPair a1' a2' :@ (l, ZPair (exprType a1') (exprType a2')))
 -- Sub
 check' e@(_ :# l) b = do
   a <- synthesize e
@@ -353,14 +350,14 @@ check' e@(_ :# l) b = do
   mapError (const l <$>) $ exprType a `subtype` b'
   applyCtxExpr a
 
-checkFunction1 :: (MonadChecker l m) => Variable -> Untyped l -> ZType -> ZType -> m (Typed l)
+checkFunction1 :: (MonadChecker l m) => Variable -> Untyped l -> ZType (Typed l) -> ZType (Typed l) -> m (Typed l)
 checkFunction1 x e a b = do
   context %= (CVariable x a <:)
   e' <- e `check` b
   context %= dropVar x
   pure e'
 
-checkFunctionN :: (MonadChecker l m) => [Variable] -> Untyped l -> [ZType] -> ZType -> m (Typed l)
+checkFunctionN :: (MonadChecker l m) => [Variable] -> Untyped l -> [ZType (Typed l)] -> ZType (Typed l) -> m (Typed l)
 checkFunctionN xs e cs b = do
   for_ (zip xs cs) $ \(x, c) ->
     context %= (CVariable x c <:)
@@ -369,35 +366,58 @@ checkFunctionN xs e cs b = do
     context %= dropVar x
   pure e'
 
+synthesizeType :: forall l m. (MonadChecker l m) => ZType (Untyped l) -> m (ZType (Typed l))
+synthesizeType (ZType n) = pure $ ZType n
+synthesizeType ZUnit = pure ZUnit
+synthesizeType ZSymbol = pure ZSymbol
+synthesizeType ZAny = pure ZAny
+synthesizeType (ZUniversal u) = pure $ ZUniversal u
+synthesizeType (ZExistential e) = pure $ ZExistential e
+synthesizeType (ZForall u@(Universal s) t) = do
+  k <- ZExistential <$> nextExtential
+  let v = Variable s
+  context %= (CVariable v k <:)
+  t' <- synthesizeType t
+  context %= dropVar v
+  ZForall u <$> applyCtxType t'
+synthesizeType (ZFunction a b) =
+  ZFunction <$> synthesizeType a <*> synthesizeType b
+synthesizeType (ZImplicit i z) =
+  ZImplicit <$> synthesizeType i <*> synthesizeType z
+synthesizeType (ZPair a b) =
+  ZPair <$> synthesizeType a <*> synthesizeType b
+synthesizeType (ZValue v) = ZValue <$> synthesize v
+
 synthesize' :: forall l m. (MonadChecker l m) => Untyped l -> m (Typed l)
 -- Var
 synthesize' (ESymbol a :# l) = do
   ctx <- use context
   case lookupVar (Variable a) ctx of
-    Just t -> pure (ESymbol a :# (l, t))
+    Just t -> pure (ESymbol a :@ (l, t))
     Nothing -> throwError $ UndefinedVariable (Variable a)
 -- Anno
 synthesize' (EAnnotation e a :# l) = do
-  e' <- e `check` a
-  applyCtxExpr (EAnnotation e' a :# (l, a))
+  a' <- synthesizeType a
+  e' <- e `check` a'
+  applyCtxExpr (EAnnotation e' a' :@ (l, a'))
 -- 1|=>
-synthesize' (EUnit :# l) = pure (EUnit :# (l, ZUnit))
+synthesize' (EUnit :# l) = pure (EUnit :@ (l, ZUnit))
 -- ->|=>
 synthesize' (ELambda1 x e _ :# l) = do
   (e', alphaHat, betaHat) <- synthesizeFunction1 x e
-  applyCtxExpr (ELambda1 x e' mempty :# (l, ZFunction alphaHat betaHat))
+  applyCtxExpr (ELambda1 x e' mempty :@ (l, ZFunction alphaHat betaHat))
 synthesize' (ELambdaN xs e _ :# l) = do
   (e', alphaHats, betaHat) <- synthesizeFunctionN xs e
-  applyCtxExpr (ELambdaN xs e' mempty :# (l, ZFunction (typeTuple alphaHats) betaHat))
+  applyCtxExpr (ELambdaN xs e' mempty :@ (l, ZFunction (typeTuple alphaHats) betaHat))
 synthesize' (EImplicit x e _ :# l) = do
   (e', alphaHat, betaHat) <- synthesizeFunction1 x e
-  applyCtxExpr (EImplicit x e' mempty :# (l, ZImplicit alphaHat betaHat))
+  applyCtxExpr (EImplicit x e' mempty :@ (l, ZImplicit alphaHat betaHat))
 synthesize' (EMacro1 x e :# l) = do
   (e', alphaHat, betaHat) <- synthesizeFunction1 x e
-  applyCtxExpr (EMacro1 x e' :# (l, ZFunction alphaHat betaHat))
+  applyCtxExpr (EMacro1 x e' :@ (l, ZFunction alphaHat betaHat))
 synthesize' (EMacroN xs e :# l) = do
   (e', alphaHats, betaHat) <- synthesizeFunctionN xs e
-  applyCtxExpr (EMacroN xs e' :# (l, ZFunction (typeTuple alphaHats) betaHat))
+  applyCtxExpr (EMacroN xs e' :@ (l, ZFunction (typeTuple alphaHats) betaHat))
 synthesize' (ENative _ :# _) = bug Unreachable
 synthesize' (ENative' _ :# _) = bug Unreachable
 synthesize' (ENativeIO _ :# _) = bug Unreachable
@@ -406,57 +426,39 @@ synthesize' (ESpecial :# _) = bug Unreachable
 synthesize' (EApply1 e1 e2 :# l) = do
   e1' <- synthesize e1
   (ze1'', e2', c) <- exprType e1' `applySynth` e2
-  applyCtxExpr (EApply1 (setType ze1'' e1') e2' :# (l, c))
+  applyCtxExpr (EApply1 (setType ze1'' e1') e2' :@ (l, c))
 synthesize' (EApplyN e1 e2s :# l) = do
   e1' <- synthesize e1
   (ze1'', e2', c) <- exprType e1' `applySynth` untypedTuple e2s
   case nonEmpty =<< maybeList e2' of
-    Just e2s' -> applyCtxExpr (EApplyN (setType ze1'' e1') e2s' :# (l, c))
+    Just e2s' -> applyCtxExpr (EApplyN (setType ze1'' e1') e2s' :@ (l, c))
     Nothing -> bug Unreachable
 synthesize' (EPair l r :# loc) = do
   l' <- synthesize l
   r' <- synthesize r
-  pure (EPair l' r' :# (loc, ZPair (exprType l') (exprType r')))
+  pure (EPair l' r' :@ (loc, ZPair (exprType l') (exprType r')))
 -- Type
-synthesize' (EType m :# l) = (:# (l, ZType 0)) . EType <$> synthesizeType m
-  where
-    synthesizeType (ZForall u@(Universal s) t) = do
-      k <- ZExistential <$> nextExtential
-      let v = Variable s
-      context %= (CVariable v k <:)
-      t' <- synthesizeType t
-      context %= dropVar v
-      ZForall u <$> applyCtxType t'
-    synthesizeType (ZFunction a b) = do
-      a' <- synthesizeType a
-      b' <- synthesizeType b
-      pure (ZFunction a' b')
-    synthesizeType (ZImplicit a b) = do
-      a' <- synthesizeType a
-      b' <- synthesizeType b
-      pure (ZImplicit a' b')
-    synthesizeType (ZPair a b) = do
-      a' <- synthesizeType a
-      b' <- synthesizeType b
-      pure (ZPair a' b')
-    synthesizeType (ZUntyped e) = unwrapType <$> synthesize (setLocation' l e)
-    synthesizeType (ZValue _) = bug Unreachable
-    synthesizeType z = pure z
+synthesize' (EType m :# l) = (:@ (l, ZType 0)) . EType <$> synthesizeType m
 -- Quote
 synthesize' (EQuote x :# lq) =
   let z = synthesizeQuoted x
-   in pure (EQuote z :# (lq, exprType z))
+   in pure (EQuote z :@ (lq, exprType z))
   where
-    synthesizeQuoted (EType n :# loc) = EType n :# (loc, ZType 0)
-    synthesizeQuoted (EUnit :# loc) = EUnit :# (loc, ZUnit)
-    synthesizeQuoted (ESymbol s :# loc) = ESymbol s :# (loc, ZSymbol)
+    synthesizeQuoted :: Untyped l -> Typed l
+    synthesizeQuoted (EType n :# loc) = EType (quotedType n) :@ (loc, ZType 0)
+    synthesizeQuoted (EUnit :# loc) = EUnit :@ (loc, ZUnit)
+    synthesizeQuoted (ESymbol s :# loc) = ESymbol s :@ (loc, ZSymbol)
     synthesizeQuoted (EPair l r :# loc) =
       let l' = synthesizeQuoted l
           r' = synthesizeQuoted r
-       in EPair l' r' :# (loc, ZPair (exprType l') (exprType r'))
+       in EPair l' r' :@ (loc, ZPair (exprType l') (exprType r'))
     synthesizeQuoted _ = bug Unreachable
 
-synthesizeFunction1 :: (MonadChecker l m) => Variable -> Untyped l -> m (Typed l, ZType, ZType)
+    quotedType :: ZType (Untyped l) -> ZType (Typed l)
+    quotedType (ZValue v) = ZValue $ synthesizeQuoted v
+    quotedType t = bug (NotImplemented $ render t)
+
+synthesizeFunction1 :: (MonadChecker l m) => Variable -> Untyped l -> m (Typed l, ZType (Typed l), ZType (Typed l))
 synthesizeFunction1 x e = do
   alphaHat <- ZExistential <$> nextExtential
   betaHat <- ZExistential <$> nextExtential
@@ -465,7 +467,7 @@ synthesizeFunction1 x e = do
   context %= dropVar x
   pure (e', alphaHat, betaHat)
 
-synthesizeFunctionN :: (MonadChecker l m) => [Variable] -> Untyped l -> m (Typed l, [ZType], ZType)
+synthesizeFunctionN :: (MonadChecker l m) => [Variable] -> Untyped l -> m (Typed l, [ZType (Typed l)], ZType (Typed l))
 synthesizeFunctionN xs e = do
   alphaHats <- forM xs $ \x -> do
     alphaHat <- ZExistential <$> nextExtential
@@ -478,7 +480,7 @@ synthesizeFunctionN xs e = do
     context %= dropVar x
   pure (e', snd <$> alphaHats, betaHat)
 
-applySynth' :: (MonadChecker l m) => ZType -> Untyped l -> m (ZType, Typed l, ZType)
+applySynth' :: (MonadChecker l m) => ZType (Typed l) -> Untyped l -> m (ZType (Typed l), Typed l, ZType (Typed l))
 -- ∀App
 applySynth' (ZForall alpha a) e = do
   alphaHat <- nextExtential
@@ -507,4 +509,4 @@ applySynth' (ZImplicit a c) e = do
   a' <- applyCtxType a
   pure (ZImplicit a' f', e', c')
 --
-applySynth' t e@(_ :# l) = throwError $ CannotApply t (project e) l
+applySynth' t e@(_ :# l) = throwError $ CannotApply (project t) (project e) l

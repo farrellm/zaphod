@@ -13,8 +13,8 @@ data ZaphodBug
 instance Exception ZaphodBug
 
 data EvaluatorException l
-  = NoMatches ZType
-  | MultipleMatches ZType [Typed']
+  = NoMatches (ZType Typed')
+  | MultipleMatches (ZType Typed') [Typed']
   | InvalidParameters (Raw l)
   | NotList (Raw l)
   | BadBegin (Raw l)
@@ -25,12 +25,12 @@ data EvaluatorException l
   deriving (Functor)
 
 data CheckerException l
-  = ArgumentMissmatch [Variable] ZType
-  | CannotApply ZType Untyped' l
-  | TypeError ZType ZType l
-  | NotSubtype ZType ZType l
+  = ArgumentMissmatch [Variable] (ZType Typed')
+  | CannotApply (ZType Typed') Untyped' l
+  | TypeError (ZType Typed') (ZType Typed') l
+  | NotSubtype (ZType Typed') (ZType Typed') l
   | UndefinedVariable Variable
-  | ExistentialAlreadySolved ZType Existential ZType
+  | ExistentialAlreadySolved (ZType Typed') Existential (ZType Typed')
   deriving (Show, Functor)
 
 mapError :: (MonadError a m) => (b -> a) -> ExceptT b m c -> m c
