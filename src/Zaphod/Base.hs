@@ -118,9 +118,9 @@ getType :: Text -> Typed' -> Either (NativeException ()) (ZType Typed')
 getType _ (e :$ _) | EType z <- e = pure z
 getType n e = throwError $ TypeMismatch n e () "Type"
 
-getPair :: Text -> Typed l -> Either (NativeException l) (Typed l, Typed l)
+getPair :: Text -> Typed l -> Either (NativeException ()) (Typed l, Typed l)
 getPair _ (EPair l r :@ _) = pure (l, r)
-getPair n e@(_ :@ (l, _)) = throwError $ TypeMismatch n (project e) l "Pair"
+getPair n e = throwError $ TypeMismatch n (project e) () "Pair"
 
 getSymbol :: Text -> Typed' -> Either (NativeException ()) Symbol
 getSymbol _ (ESymbol s :$ _) = pure s

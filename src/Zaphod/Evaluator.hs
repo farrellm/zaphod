@@ -43,9 +43,6 @@ liftChecker f x = do
 liftNative :: (MonadError (EvaluatorException l) m) => l -> Either (NativeException ()) a -> m a
 liftNative l = liftEither . first (NativeException . fmap (const l))
 
-liftNative' :: (MonadError (EvaluatorException l) m) => Either (NativeException l) a -> m a
-liftNative' = liftEither . first NativeException
-
 isSubtype ::
   ( MonadReader (Environment (Typed l)) m,
     MonadError (EvaluatorException l) m,
@@ -129,7 +126,7 @@ evaluate ex@(_ :@ (lex, _)) = do
         ENative' (Native' g) :@ _ -> do
           x' <- eval x
           case maybeList x' of
-            Just [a] -> liftNative' $ g a
+            Just [a] -> liftNative l $ g a
             _ -> bug Unreachable
         ENativeIO (NativeIO g) :@ _ -> setLocation l <$> liftIO g
         _ -> bug Unreachable
@@ -168,10 +165,10 @@ evaluate ex@(_ :@ (lex, _)) = do
           case xs of
             x :| [] -> do
               x' <- eval x
-              liftNative' $ g x'
+              liftNative l $ g x'
             _ -> do
               xs' <- eval (typedTuple xs)
-              liftNative' $ g xs'
+              liftNative l $ g xs'
         ENativeIO (NativeIO g) :@ _ -> setLocation l <$> liftIO g
         _ -> trace' (render f') $ bug Unreachable
     eval (EPair a b :@ lt) = (:@ lt) <$> (EPair <$> eval a <*> eval b)

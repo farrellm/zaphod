@@ -151,7 +151,7 @@ instance Eq Native where
 instance Show Native where
   show _ = "Native <native>"
 
-newtype Native' = Native' (forall l. (Location l) => Typed l -> Either (NativeException l) (Typed l))
+newtype Native' = Native' (forall l. (Location l) => Typed l -> Either (NativeException ()) (Typed l))
 
 instance Eq Native' where
   _ == _ = bug EqUndefined
