@@ -89,7 +89,16 @@ evaluate ex@(_ :@ (lex, _)) = do
       | ESymbol "apply" :@ _ <- o,
         f :| [xs'] <- xs =
         eval (EApply1 f xs' :@ lt)
-    eval (EApply1 f x :@ (l, t)) = do
+    eval (EApply1 f x :@ (l, t)) = evalApply1 f x l t
+    eval (EApplyN f xs :@ (l, t)) = evalApplyN f xs l t
+    eval (EPair a b :@ lt) = (:@ lt) <$> (EPair <$> eval a <*> eval b)
+    eval (ELambda1 v e _ :@ lt) = (:@ lt) <$> (ELambda1 v e <$> (fst <$> ask))
+    eval (ELambdaN vs e _ :@ lt) = (:@ lt) <$> (ELambdaN vs e <$> (fst <$> ask))
+    eval (EQuote z :@ _) = pure z
+    eval (EType t :@ l) = (:@ l) . EType <$> evalType t
+    eval e = pure e
+
+    evalApply1 f x l t = do
       f' <- eval f
       setType t <$> case f' of
         ELambda1 (Variable v) e env :@ _ -> do
@@ -108,11 +117,11 @@ evaluate ex@(_ :@ (lex, _)) = do
           local (\(_, n) -> (insert v x' mempty, n)) $ eval e
         EMacroN vs e :@ _ -> do
           mxs' <- eval x
-          case nonEmpty <$> maybeList mxs' of
-            Just (Just xs') ->
-              local (\(_, n) -> (foldl' insertVar mempty (zip vs $ toList xs'), n)) $
+          case maybeList mxs' of
+            Just [] -> eval e
+            Just xs' ->
+              local (\(_, n) -> (foldl' insertVar mempty (zip vs xs'), n)) $
                 eval e
-            Just Nothing -> eval e
             Nothing -> bug Unreachable
         EImplicit (Variable v) e env :@ (_, ZImplicit i _) -> do
           ss <- findOfType i
@@ -134,7 +143,8 @@ evaluate ex@(_ :@ (lex, _)) = do
             _ -> bug Unreachable
         ENativeIO (NativeIO g) :@ _ -> setLocation l <$> liftIO g
         _ -> bug Unreachable
-    eval (EApplyN f xs :@ (l, t)) = do
+
+    evalApplyN f xs l t = do
       f' <- eval f
       setType t <$> case f' of
         ELambda1 (Variable v) e env :@ _ -> do
@@ -175,12 +185,6 @@ evaluate ex@(_ :@ (lex, _)) = do
               liftNative l $ g xs'
         ENativeIO (NativeIO g) :@ _ -> setLocation l <$> liftIO g
         _ -> debug (render f') $ bug Unreachable
-    eval (EPair a b :@ lt) = (:@ lt) <$> (EPair <$> eval a <*> eval b)
-    eval (ELambda1 v e _ :@ lt) = (:@ lt) <$> (ELambda1 v e <$> (fst <$> ask))
-    eval (ELambdaN vs e _ :@ lt) = (:@ lt) <$> (ELambdaN vs e <$> (fst <$> ask))
-    eval (EQuote z :@ _) = pure z
-    eval (EType t :@ l) = (:@ l) . EType <$> evalType t
-    eval e = pure e
 
     evalType :: ZType (Typed l) -> ReaderT (Environment (Typed l), Environment (Typed l)) m (ZType (Typed l))
     evalType (ZForall u@(Universal s) z) =
