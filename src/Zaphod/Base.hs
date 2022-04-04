@@ -44,7 +44,7 @@ zTuple3 :: ZType Typed' -> ZType Typed' -> ZType Typed' -> ZType Typed'
 zTuple3 x y z = ZPair x $ zTuple2 y z
 
 zBool :: ZType Typed'
-zBool = ZValue (ESymbol "Bool" :$ zType)
+zBool = ZValue (ESymbol "Bool" :$ ZSymbol)
 
 zTrue :: Typed'
 zTrue = ESymbol "True" :$ zBool
@@ -73,6 +73,7 @@ baseEnvironment =
       ("symbol-concat", ENative (Native (symbolConcat . zUncurry2')) :$ zSymbolConcat),
       ("top-eq", ENative (Native (pure . stripEq . zUncurry2')) :$ zAnyEq),
       ("unsafe-gensym", ENativeIO (NativeIO unsafeGensym) :$ zUnsafeGensym),
+      ("promote", ENative (Native (pure . promote)) :$ zPromote),
       -- Special forms
       ("if", ESpecial :$ zIf),
       ("apply", ESpecial :$ zApply),
@@ -88,6 +89,7 @@ baseEnvironment =
     zApply = ZForall a . ZForall b $ ZFunction (zTuple2 (ZFunction za zb) za) zb
     zUnsafeCoerce = ZForall a . ZForall b $ ZFunction (zTuple1 za) zb
     zUnsafeGensym = ZFunction ZUnit ZSymbol
+    zPromote = ZForall a $ ZFunction za (ZType 0)
     --
     zPred = ZForall a (ZFunction (zTuple1 za) zBool)
     zSymbolEq = ZFunction (zTuple2 ZSymbol ZSymbol) zBool
@@ -113,6 +115,7 @@ baseEnvironment =
     toZBool False = zFalse
     stripEq (x, y) = toZBool (x == y)
     unsafeGensym = (:$ ZSymbol) <$> (ESymbol <$> gensym)
+    promote x = EType (ZValue x) :$ ZType 0
 
 getType :: Text -> Typed' -> Either (NativeException ()) (ZType Typed')
 getType _ (e :$ _) | EType z <- e = pure z

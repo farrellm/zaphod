@@ -228,14 +228,6 @@ instance Render (Typed l) where
 exprType :: Typed l -> ZType (Typed l)
 exprType (_ :@ (_, t)) = t
 
-unwrapType :: Typed l -> ZType (Typed l)
-unwrapType ((EType z) :@ _) = z
-unwrapType e = ZValue e
-
-unwrapUntyped :: (Monoid l) => ZType (Untyped l) -> Untyped l
-unwrapUntyped (ZValue e) = e
-unwrapUntyped z = EType z :# mempty
-
 setType :: ZType (Typed l) -> Typed l -> Typed l
 setType z (e :@ (l, _)) = e :@ (l, z)
 

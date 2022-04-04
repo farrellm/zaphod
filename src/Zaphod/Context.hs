@@ -99,6 +99,8 @@ substitute x y (ZValue e) = ZValue (substituteValue e)
       ESymbol s :@ (l, substitute x y t)
     substituteValue ((EPair a b) :@ (l, t)) =
       EPair (substituteValue a) (substituteValue b) :@ (l, substitute x y t)
+    substituteValue ((EType z) :@ (l, t)) =
+      EType (substitute x y z) :@ (l, substitute x y t)
     substituteValue z = bug (NotImplemented $ render z)
 substitute _ _ z@ZUnit = z
 substitute _ _ z@ZSymbol = z

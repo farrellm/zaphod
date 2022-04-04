@@ -109,7 +109,7 @@ isMonoType (ZValue v) = isMonoTypeValue v
     -- isMonoTypeValue (EImplicit _ h _ :@ t) = isMonoTypeValue h
     -- isMonoTypeValue (EApply1 f x :@ t) = isMonoTypeValue f && isMonoTypeValue x
     -- isMonoTypeValue (EApplyN f xs :@ t) = isMonoTypeValue f && all isMonoTypeValue xs
-    -- isMonoTypeValue (EPair l r :@ t) = isMonoTypeValue l && isMonoTypeValue r
+    isMonoTypeValue (EPair l r :@ _) = isMonoTypeValue l && isMonoTypeValue r
     -- isMonoTypeValue (EAnnotation x _ :@ t) = isMonoTypeValue x
     -- isMonoTypeValue (EQuote _ :@ t) = True
     isMonoTypeValue e = bug (NotImplemented $ render e)
@@ -209,7 +209,14 @@ subtype' ZSymbol ZSymbol = pass
 -- <:Type
 subtype' (ZType m) (ZType n) | m == n = pass
 -- <:Value
-subtype' (ZValue a) (ZValue b) | a == b = pass
+subtype' (ZValue x) (ZValue y) = x `exprSubtype` y
+  where
+    exprSubtype a b | a == b = pass
+    exprSubtype ((EPair al ar :@ _)) (EPair bl br :@ _) = do
+      al `exprSubtype` bl
+      ar `exprSubtype` br
+    exprSubtype (EType a :@ _) (EType b :@ _) = a `subtype` b
+    exprSubtype a b = throwError $ NotSubtype (project $ ZValue a) (project $ ZValue b) mempty
 --
 subtype' a b = throwError $ NotSubtype (project a) (project b) mempty
 

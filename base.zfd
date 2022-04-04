@@ -254,7 +254,7 @@
   ['begin
     ['def n
           'Type
-          ['quote n]]
+          ['promote ['quote n]]]
     (cons 'begin (top-map (lambda (c) (constructor1 n c)) cs))
     (cons 'begin (top-map (lambda (c) (cons-pred1 n c)) cs))
     (cons 'begin (top-map (lambda (c) (cons-acc1 n c)) cs))])
@@ -277,7 +277,7 @@
     ['begin
       ['def n
             ['-> (cons 'tuple (top-map data-arg-kind xs)) 'Type]
-            ['lambda ps [': (cons 'tuple (cons ['quote n] ps)) 'Type]]]
+            ['lambda ps ['promote (cons 'tuple (cons ['quote n] ps))]]]
       (cons 'begin (top-map (lambda (c) (constructor n ps c)) cs))
       (cons 'begin (top-map (lambda (c) (cons-pred n ps c)) cs))
       (cons 'begin (top-map (lambda (c) (cons-acc n ps c)) cs))]))

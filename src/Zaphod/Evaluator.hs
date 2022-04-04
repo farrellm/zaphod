@@ -29,6 +29,10 @@ type MonadEvaluator l m =
     Location l
   )
 
+unwrapType :: Typed l -> ZType (Typed l)
+unwrapType ((EType z) :@ _) = z
+unwrapType _ = bug Unreachable
+
 liftChecker ::
   (MonadError (EvaluatorException l) m) =>
   (a -> ExceptT (CheckerException l) m b) ->
@@ -196,14 +200,12 @@ evaluate ex@(_ :@ (lex, _)) = do
     insertVar :: Environment a -> (Variable, a) -> Environment a
     insertVar env (Variable v, x) = insert v x env
 
-evaluateType :: (MonadEvaluator l m) => Untyped l -> m (ZType (Typed l))
+evaluateType :: (MonadEvaluator l m) => ZType (Untyped l) -> m (ZType (Typed l))
 evaluateType u = do
+  let u' = EType u :# mempty
   env <- ask
-  t <- evaluatingStateT (emptyCheckerState env) $ liftChecker (check u) (ZType 0)
-  setExprType . unwrapType <$> evaluate t
-  where
-    setExprType (ZValue e) = ZValue (setType (ZType 0) e)
-    setExprType z = z
+  t <- evaluatingStateT (emptyCheckerState env) $ liftChecker (check u') (ZType 0)
+  unwrapType <$> evaluate t
 
 analyzeType :: (MonadEvaluator l m) => Raw l -> m (ZType (Untyped l))
 analyzeType (RUnit :# _) = pure ZUnit
@@ -224,7 +226,7 @@ analyzeType (RPair a b :# l) = do
   a' <- analyzeUntyped a
   case nonEmpty <$> maybeList b of
     Just (Just xs) -> do
-      xs' <- traverse (fmap unwrapUntyped . analyzeType) xs
+      xs' <- traverse (fmap (\z -> EType z :# mempty) . analyzeType) xs
       pure $ ZValue (EApplyN a' xs' :# l)
     Just Nothing -> pure $ ZValue (EApply1 a' (EUnit :# locEnd l) :# l)
     Nothing -> do
@@ -255,8 +257,6 @@ analyzeUntyped (RS "macro" `RPair` (mxs :. e :. RU) :# l)
     Just vs <- traverse maybeSymbol xs =
     (:# l) <$> (EMacroN (Variable <$> vs) <$> analyzeUntyped e)
 analyzeUntyped r@(RS "macro" `RPair` _ :# _) = throwError (InvalidMacro r)
-analyzeUntyped (RS ":" `RPair` (t :. RS "Type" :. RU) :# l) =
-  (:# l) . EType <$> analyzeType t
 analyzeUntyped (RS ":" `RPair` (e :. t :. RU) :# l) =
   (:# l) <$> (EAnnotation <$> analyzeUntyped e <*> (project <$> evaluateRawType t))
 analyzeUntyped (RS "quote" `RPair` (x :. RU) :# l) =
@@ -283,15 +283,12 @@ evaluateRaw ::
   Maybe (Symbol, Raw l) ->
   Raw l ->
   m (Typed l)
-evaluateRaw m x@(_ :# l) = do
+evaluateRaw m x = do
   env <- _environment <$> get
   x' <-
     usingReaderT env
       . evaluatingStateT (emptyCheckerState env)
       $ case m of
-        Just (n, RSymbol "Type" :# _) -> do
-          context %= (CVariable (Variable n) (ZType 0) <:)
-          (:@ (l, ZType 0)) . EType <$> evaluateRawType x
         Just (n, t) -> do
           t' <- evaluateRawType t
           context %= (CVariable (Variable n) t' <:)
@@ -338,7 +335,7 @@ evaluateRaw m x@(_ :# l) = do
 evaluateRawType :: (MonadEvaluator l m) => Raw l -> m (ZType (Typed l))
 evaluateRawType t = do
   t' <- analyzeType t
-  evaluateType $ unwrapUntyped t'
+  evaluateType t'
 
 macroExpand1 :: (MonadEvaluator l m) => Raw l -> m (Raw l)
 macroExpand1 w = do
