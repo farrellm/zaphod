@@ -1,5 +1,6 @@
 module Zaphod.Types.Error where
 
+import Control.Monad.Except (MonadError (catchError))
 import Zaphod.Types.Expr (NativeException, Typed', Untyped', ZType)
 import Zaphod.Types.Raw (Raw)
 import Zaphod.Types.Wrapper (Existential, Variable)
@@ -22,6 +23,7 @@ data EvaluatorException l
   | CheckerException (CheckerException l)
   | InvalidLambda (Raw l)
   | InvalidMacro (Raw l)
+  | CallSite l (EvaluatorException l)
   deriving (Functor)
 
 data CheckerException l
@@ -39,3 +41,6 @@ mapError f x = do
   case res of
     Right r -> pure r
     Left e -> throwError (f e)
+
+modifyError :: (MonadError a m) => (a -> a) -> m c -> m c
+modifyError f x = catchError x $ \e -> throwError (f e)

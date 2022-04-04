@@ -30,7 +30,6 @@ emptyZState =
 
 printError :: (MonadIO m) => EvaluatorException (Maybe Loc) -> m ()
 printError err = do
-  putTextLn ""
   case err of
     NoMatches z ->
       putTextLn ("No implicit arguments available of type: " <> render z)
@@ -50,6 +49,9 @@ printError err = do
               <> " but got "
               <> render x
           )
+    CallSite l err' -> do
+      printLocation l
+      printError err'
     CheckerException c -> case c of
       NotSubtype a b l -> do
         printLocation l

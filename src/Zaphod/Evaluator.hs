@@ -103,45 +103,59 @@ evaluate ex@(_ :@ (lex, _)) = do
       setType t <$> case f' of
         ELambda1 (Variable v) e env :@ _ -> do
           x' <- eval x
-          local (\(_, n) -> (insert v x' env, n)) $ eval e
+          modifyError (CallSite l)
+            . local (\(_, n) -> (insert v x' env, n))
+            $ eval e
         ELambdaN vs e env :@ _ -> do
           mxs' <- eval x
           case nonEmpty <$> maybeList mxs' of
             Just (Just xs') ->
-              local (\(_, n) -> (foldl' insertVar env (zip vs $ toList xs'), n)) $
-                eval e
+              modifyError (CallSite l)
+                . local (\(_, n) -> (foldl' insertVar env (zip vs $ toList xs'), n))
+                $ eval e
             Just Nothing -> eval e
             Nothing -> bug Unreachable
         EMacro1 (Variable v) e :@ _ -> do
           x' <- eval x
-          local (\(_, n) -> (insert v x' mempty, n)) $ eval e
+          modifyError (CallSite l)
+            . local (\(_, n) -> (insert v x' mempty, n))
+            $ eval e
         EMacroN vs e :@ _ -> do
           mxs' <- eval x
           case maybeList mxs' of
-            Just [] -> eval e
             Just xs' ->
-              local (\(_, n) -> (foldl' insertVar mempty (zip vs xs'), n)) $
-                eval e
+              modifyError (CallSite l)
+                . local (\(_, n) -> (foldl' insertVar mempty (zip vs xs'), n))
+                $ eval e
             Nothing -> bug Unreachable
         EImplicit (Variable v) e env :@ (_, ZImplicit i _) -> do
           ss <- findOfType i
           case ss of
             [s] ->
-              local (\(_, n) -> (insert v s env, n)) $
-                eval (EApply1 e x :@ (l, t))
+              modifyError (CallSite l)
+                . local (\(_, n) -> (insert v s env, n))
+                $ eval (EApply1 e x :@ (l, t))
             [] -> throwError (NoMatches $ project i)
             _ -> throwError (MultipleMatches (project i) (project <$> ss))
         ENative (Native g) :@ _ -> do
           x' <- eval x
           case maybeList x' of
-            Just [a] -> liftNative l $ setLocation l <$> g (project a)
+            Just [a] ->
+              modifyError (CallSite l)
+                . liftNative l
+                $ setLocation l <$> g (project a)
             _ -> bug Unreachable
         ENative' (Native' g) :@ _ -> do
           x' <- eval x
           case maybeList x' of
-            Just [a] -> liftNative l $ g a
+            Just [a] ->
+              modifyError (CallSite l)
+                . liftNative l
+                $ g a
             _ -> bug Unreachable
-        ENativeIO (NativeIO g) :@ _ -> setLocation l <$> liftIO g
+        ENativeIO (NativeIO g) :@ _ ->
+          modifyError (CallSite l) $
+            setLocation l <$> liftIO g
         _ -> bug Unreachable
 
     evalApplyN f xs l t = do
@@ -149,29 +163,40 @@ evaluate ex@(_ :@ (lex, _)) = do
       setType t <$> case f' of
         ELambda1 (Variable v) e env :@ _ -> do
           x' <- eval (typedTuple xs)
-          local (\(_, n) -> (insert v x' env, n)) $ eval e
+          modifyError (CallSite l)
+            . local (\(_, n) -> (insert v x' env, n))
+            $ eval e
         ELambdaN vs e env :@ _ -> do
           xs' <- traverse eval xs
-          local (\(_, n) -> (foldl' insertVar env (zip vs $ toList xs'), n)) $ eval e
+          modifyError (CallSite l)
+            . local (\(_, n) -> (foldl' insertVar env (zip vs $ toList xs'), n))
+            $ eval e
         EMacro1 (Variable v) e :@ _ -> do
           x' <- eval (typedTuple xs)
-          local (\(_, n) -> (insert v x' mempty, n)) $ eval e
+          modifyError (CallSite l)
+            . local (\(_, n) -> (insert v x' mempty, n))
+            $ eval e
         EMacroN vs e :@ _ -> do
           xs' <- traverse eval xs
-          local (\(_, n) -> (foldl' insertVar mempty (zip vs $ toList xs'), n)) $ eval e
+          modifyError (CallSite l)
+            . local (\(_, n) -> (foldl' insertVar mempty (zip vs $ toList xs'), n))
+            $ eval e
         EImplicit (Variable v) e env :@ (_, ZImplicit i _) -> do
           ss <- findOfType i
           case ss of
             [s] ->
-              local (\(_, n) -> (insert v s env, n)) $
-                eval (EApplyN e xs :@ (l, t))
+              modifyError (CallSite l)
+                . local (\(_, n) -> (insert v s env, n))
+                $ eval (EApplyN e xs :@ (l, t))
             [] -> throwError (NoMatches $ project i)
             _ -> throwError (MultipleMatches (project i) (project <$> ss))
         ENative (Native g) :@ _ ->
           case xs of
             x :| [] -> do
               x' <- eval x
-              liftNative l $ setLocation l <$> g (project x')
+              modifyError (CallSite l)
+                . liftNative l
+                $ setLocation l <$> g (project x')
             _ -> do
               xs' <- eval (typedTuple xs)
               liftNative l $ setLocation l <$> g (project xs')
@@ -179,11 +204,17 @@ evaluate ex@(_ :@ (lex, _)) = do
           case xs of
             x :| [] -> do
               x' <- eval x
-              liftNative l $ g x'
+              modifyError (CallSite l)
+                . liftNative l
+                $ g x'
             _ -> do
               xs' <- eval (typedTuple xs)
-              liftNative l $ g xs'
-        ENativeIO (NativeIO g) :@ _ -> setLocation l <$> liftIO g
+              modifyError (CallSite l)
+                . liftNative l
+                $ g xs'
+        ENativeIO (NativeIO g) :@ _ ->
+          modifyError (CallSite l) $
+            setLocation l <$> liftIO g
         _ -> debug (render f') $ bug Unreachable
 
     evalType :: ZType (Typed l) -> ReaderT (Environment (Typed l), Environment (Typed l)) m (ZType (Typed l))
