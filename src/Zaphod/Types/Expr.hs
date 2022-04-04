@@ -72,7 +72,7 @@ data Expr f
   | EMacro1 Variable f
   | EMacroN [Variable] f
   | EApply1 f f
-  | EApplyN f (NonEmpty f)
+  | EApplyN f [f]
   | EPair f f
   | EAnnotation f (ZType f)
   | EQuote f
@@ -169,6 +169,9 @@ instance Show NativeIO where
 instance (Location l) => Magma (l, ZType f) where
   (lx, tx) >< (ly, ty) = (lx <> ly, tx >< ty)
 
+instance (Location l) => Magma (Untyped l) where
+  x@(_ :# lx) >< y@(_ :# ly) = EPair x y :# (lx <> ly)
+
 instance (Location l) => Magma (Typed l) where
   x@(_ :@ tx) >< y@(_ :@ ty) = EPair x y :@ (tx >< ty)
 
@@ -233,16 +236,12 @@ setType z (e :@ (l, _)) = e :@ (l, z)
 typeTuple :: [ZType l] -> ZType l
 typeTuple = foldr (><) ZUnit
 
-untypedTuple :: (Location l) => NonEmpty (Untyped l) -> Untyped l
-untypedTuple (x@(_ :# lx) :| xs) =
-  case nonEmpty xs of
-    Nothing -> EPair x (EUnit :# locEnd lx) :# lx
-    Just xs' ->
-      let y@(_ :# ly) = untypedTuple xs'
-       in EPair x y :# (lx <> ly)
+untypedTuple :: (Location l, Monoid l) => [Untyped l] -> Untyped l
+untypedTuple [] = EUnit :# mempty
+untypedTuple [x@(_ :# lx)] = EPair x (EUnit :# locEnd lx) :# lx
+untypedTuple (x : xs) = x >< untypedTuple xs
 
-typedTuple :: (Location l) => NonEmpty (Typed l) -> Typed l
-typedTuple (x@(_ :@ (l, _)) :| xs) =
-  case nonEmpty xs of
-    Nothing -> x >< (EUnit :@ (locEnd l, ZUnit))
-    Just xs' -> x >< typedTuple xs'
+typedTuple :: (Location l, Monoid l) => [Typed l] -> Typed l
+typedTuple [] = EUnit :@ (mempty, ZUnit)
+typedTuple [x@(_ :@ (l, _))] = x >< (EUnit :@ (locEnd l, ZUnit))
+typedTuple (x : xs) = x >< typedTuple xs

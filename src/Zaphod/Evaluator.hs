@@ -80,14 +80,14 @@ evaluate ex@(_ :@ (lex, _)) = do
     eval (EApplyN o xs :@ lt)
       | ESymbol "if" :@ _ <- o =
         case xs of
-          p :| [a, b] -> do
+          [p, a, b] -> do
             p' <- eval p
             if project p' == zTrue
               then eval a
               else eval b
           _ -> bug Unreachable
       | ESymbol "apply" :@ _ <- o,
-        f :| [xs'] <- xs =
+        [f, xs'] <- xs =
         eval (EApply1 f xs' :@ lt)
     eval (EApply1 f x :@ (l, t)) = evalApply1 f x l t
     eval (EApplyN f xs :@ (l, t)) = evalApplyN f xs l t
@@ -169,7 +169,7 @@ evaluate ex@(_ :@ (lex, _)) = do
         ELambdaN vs e env :@ _ -> do
           xs' <- traverse eval xs
           modifyError (CallSite l)
-            . local (\(_, n) -> (foldl' insertVar env (zip vs $ toList xs'), n))
+            . local (\(_, n) -> (foldl' insertVar env (zip vs xs'), n))
             $ eval e
         EMacro1 (Variable v) e :@ _ -> do
           x' <- eval (typedTuple xs)
@@ -179,7 +179,7 @@ evaluate ex@(_ :@ (lex, _)) = do
         EMacroN vs e :@ _ -> do
           xs' <- traverse eval xs
           modifyError (CallSite l)
-            . local (\(_, n) -> (foldl' insertVar mempty (zip vs $ toList xs'), n))
+            . local (\(_, n) -> (foldl' insertVar mempty (zip vs xs'), n))
             $ eval e
         EImplicit (Variable v) e env :@ (_, ZImplicit i _) -> do
           ss <- findOfType i
@@ -192,7 +192,7 @@ evaluate ex@(_ :@ (lex, _)) = do
             _ -> throwError (MultipleMatches (project i) (project <$> ss))
         ENative (Native g) :@ _ ->
           case xs of
-            x :| [] -> do
+            [x] -> do
               x' <- eval x
               modifyError (CallSite l)
                 . liftNative l
@@ -202,7 +202,7 @@ evaluate ex@(_ :@ (lex, _)) = do
               liftNative l $ setLocation l <$> g (project xs')
         ENative' (Native' g) :@ _ ->
           case xs of
-            x :| [] -> do
+            [x] -> do
               x' <- eval x
               modifyError (CallSite l)
                 . liftNative l
@@ -259,11 +259,10 @@ analyzeType (RPair (RSymbol "cons" :# lc) ts :# lp) =
   analyzeType (RPair (RSymbol "zcons" :# lc) ts :# lp)
 analyzeType (RPair a b :# l) = do
   a' <- analyzeUntyped a
-  case nonEmpty <$> maybeList b of
-    Just (Just xs) -> do
+  case maybeList b of
+    Just xs -> do
       xs' <- traverse (fmap (\z -> EType z :# mempty) . analyzeType) xs
       pure $ ZValue (EApplyN a' xs' :# l)
-    Just Nothing -> pure $ ZValue (EApply1 a' (EUnit :# locEnd l) :# l)
     Nothing -> do
       b' <- analyzeType b
       pure $ ZValue (EApply1 a' (EType b' :# mempty) :# l)
@@ -297,11 +296,8 @@ analyzeUntyped (RS ":" `RPair` (e :. t :. RU) :# l) =
 analyzeUntyped (RS "quote" `RPair` (x :. RU) :# l) =
   pure $ EQuote (analyzeQuoted x) :# l
 analyzeUntyped (RPair a b :# l) =
-  case nonEmpty <$> maybeList b of
-    Just (Just xs) ->
-      (:# l) <$> (EApplyN <$> analyzeUntyped a <*> traverse analyzeUntyped xs)
-    Just Nothing ->
-      (:# l) <$> (EApply1 <$> analyzeUntyped a <*> pure (EUnit :# locEnd l))
+  case maybeList b of
+    Just xs -> (:# l) <$> (EApplyN <$> analyzeUntyped a <*> traverse analyzeUntyped xs)
     Nothing -> (:# l) <$> (EApply1 <$> analyzeUntyped a <*> analyzeUntyped b)
 
 maybeSymbol :: Raw l -> Maybe Symbol
