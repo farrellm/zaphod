@@ -403,7 +403,7 @@ evaluateTopLevel' (RS "begin" :. r) =
       Just rs' -> do
         xs <- traverse evaluateTopLevel' rs'
         pure $ last xs
-      Nothing -> throwError (BadBegin r)
+      Nothing -> pure (EUnit :$ ZUnit)
     Nothing -> throwError (BadBegin r)
 evaluateTopLevel' e = project <$> evaluateRaw Nothing e
 
