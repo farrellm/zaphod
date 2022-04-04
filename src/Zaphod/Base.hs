@@ -118,7 +118,7 @@ baseEnvironment =
     promote x = EType (ZValue x) :$ ZType 0
 
 getType :: Text -> Typed' -> Either (NativeException ()) (ZType Typed')
-getType _ (e :$ _) | EType z <- e = pure z
+getType _ (EType z :$ _) = pure z
 getType n e = throwError $ TypeMismatch n e () "Type"
 
 getPair :: Text -> Typed l -> Either (NativeException ()) (Typed l, Typed l)

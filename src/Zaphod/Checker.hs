@@ -160,14 +160,14 @@ logInfo :: (Render a, MonadState (CheckerState l) m) => Text -> m a -> m a
 logInfo m x = do
   i <- mkIndent
   ctx <- use context
-  traceM' (i <> "<" <> m)
-  traceM' (i <> "|    " <> render ctx)
+  debugM (i <> "<" <> m)
+  debugM (i <> "|    " <> render ctx)
   depth += 1
   res <- x
   depth -= 1
   ctx' <- use context
-  traceM' (i <> ">    " <> render res)
-  traceM' (i <> "     " <> render ctx')
+  debugM (i <> ">    " <> render res)
+  debugM (i <> "     " <> render ctx')
   pure res
   where
     mkIndent :: (MonadState (CheckerState l) m) => m Text

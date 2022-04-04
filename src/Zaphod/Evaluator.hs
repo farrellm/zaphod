@@ -89,9 +89,9 @@ evaluate ex@(_ :@ (lex, _)) = do
       | ESymbol "apply" :@ _ <- o,
         f :| [xs'] <- xs =
         eval (EApply1 f xs' :@ lt)
-    eval (EApply1 f x :@ (l, r)) = do
+    eval (EApply1 f x :@ (l, t)) = do
       f' <- eval f
-      setType r <$> case f' of
+      setType t <$> case f' of
         ELambda1 (Variable v) e env :@ _ -> do
           x' <- eval x
           local (\(_, n) -> (insert v x' env, n)) $ eval e
@@ -119,7 +119,7 @@ evaluate ex@(_ :@ (lex, _)) = do
           case ss of
             [s] ->
               local (\(_, n) -> (insert v s env, n)) $
-                eval (EApply1 e x :@ (l, r))
+                eval (EApply1 e x :@ (l, t))
             [] -> throwError (NoMatches $ project i)
             _ -> throwError (MultipleMatches (project i) (project <$> ss))
         ENative (Native g) :@ _ -> do
@@ -134,9 +134,9 @@ evaluate ex@(_ :@ (lex, _)) = do
             _ -> bug Unreachable
         ENativeIO (NativeIO g) :@ _ -> setLocation l <$> liftIO g
         _ -> bug Unreachable
-    eval (EApplyN f xs :@ (l, r)) = do
+    eval (EApplyN f xs :@ (l, t)) = do
       f' <- eval f
-      setType r <$> case f' of
+      setType t <$> case f' of
         ELambda1 (Variable v) e env :@ _ -> do
           x' <- eval (typedTuple xs)
           local (\(_, n) -> (insert v x' env, n)) $ eval e
@@ -154,7 +154,7 @@ evaluate ex@(_ :@ (lex, _)) = do
           case ss of
             [s] ->
               local (\(_, n) -> (insert v s env, n)) $
-                eval (EApplyN e xs :@ (l, r))
+                eval (EApplyN e xs :@ (l, t))
             [] -> throwError (NoMatches $ project i)
             _ -> throwError (MultipleMatches (project i) (project <$> ss))
         ENative (Native g) :@ _ ->
@@ -174,7 +174,7 @@ evaluate ex@(_ :@ (lex, _)) = do
               xs' <- eval (typedTuple xs)
               liftNative l $ g xs'
         ENativeIO (NativeIO g) :@ _ -> setLocation l <$> liftIO g
-        _ -> trace' (render f') $ bug Unreachable
+        _ -> debug (render f') $ bug Unreachable
     eval (EPair a b :@ lt) = (:@ lt) <$> (EPair <$> eval a <*> eval b)
     eval (ELambda1 v e _ :@ lt) = (:@ lt) <$> (ELambda1 v e <$> (fst <$> ask))
     eval (ELambdaN vs e _ :@ lt) = (:@ lt) <$> (ELambdaN vs e <$> (fst <$> ask))
