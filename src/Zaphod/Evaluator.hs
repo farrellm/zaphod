@@ -12,7 +12,6 @@ where
 
 import Control.Monad.Except (liftEither)
 import qualified Data.Map as M
-import Data.MonoTraversable (omap)
 import qualified Data.Set as S
 import Lens.Micro.Mtl ((%=))
 import Relude.Extra.Map (elems, insert, lookup, (!?))

@@ -31,7 +31,6 @@ default-extensions:
 - RankNTypes
 - ScopedTypeVariables
 - StandaloneDeriving
-- TypeFamilies
 
 dependencies:
 - name: base
@@ -44,7 +43,6 @@ dependencies:
 - microlens-th
 - megaparsec
 - mtl
-- mono-traversable
 - optparse-applicative
 - parser-combinators
 - relude

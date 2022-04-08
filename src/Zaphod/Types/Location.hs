@@ -2,7 +2,6 @@
 
 module Zaphod.Types.Location where
 
-import Data.MonoTraversable (Element, MonoFunctor (..))
 import Text.Megaparsec (SourcePos)
 import Zaphod.Types.Class (Injection (..), Location (..), Projection (..))
 
@@ -50,7 +49,5 @@ instance (Functor f, Functor z) => Projection (LocB f z l) (LocU f) where
 instance (Functor f, Functor z, Monoid l) => Injection (LocA f z) (LocB f z l) where
   embed (x :$ z) = (embed <$> x) :@ (mempty, embed <$> z)
 
-type instance Element (LocB f z l) = z (LocB f z l)
-
-instance (Functor f) => MonoFunctor (LocB f z l) where
-  omap f (x :@ (l, z)) = (omap f <$> x) :@ (l, f z)
+omap :: (Functor f) => (z (LocB f z l) -> z (LocB f z l)) -> LocB f z l -> LocB f z l
+omap f (x :@ (l, z)) = (omap f <$> x) :@ (l, f z)
