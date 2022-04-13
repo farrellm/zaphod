@@ -13,8 +13,8 @@ where
 import Control.Monad.Except (liftEither)
 import qualified Data.Map as M
 import qualified Data.Set as S
-import Lens.Micro.Mtl ((%=))
-import Relude.Extra.Map (elems, insert, lookup, (!?))
+import Lens.Micro.Platform (at, view, (%=), (.~), (?=), (?~))
+import Relude.Extra.Map (elems, insert)
 import Zaphod.Base (zTrue)
 import Zaphod.Checker (check, subtype, synthesize)
 import Zaphod.Context ((<:))
@@ -40,7 +40,7 @@ liftNative l = liftEither . first (NativeException . fmap (const l))
 
 isSubtype :: (MonadEvaluator l m) => ZType (Typed l) -> ZType (Typed l) -> m Bool
 isSubtype a b = do
-  gbl <- snd <$> ask
+  gbl <- view gblEnv
   e <- runExceptT (evaluatingStateT (emptyCheckerState gbl) $ subtype a b)
   case e of
     Right () -> pure True
@@ -52,7 +52,8 @@ evaluate ex@(_ :@ (lex, _)) = eval ex
   where
     eval :: Typed l -> m (Typed l)
     eval (ESymbol s :@ (_, z)) = do
-      (m, n) <- bimapF (!? s) (!? s) ask
+      m <- view (lclEnv . at s)
+      n <- view (gblEnv . at s)
       pure $ case (m, n) of
         (Just v, _) -> setType z v
         (_, Just v) -> setType z v
@@ -73,8 +74,8 @@ evaluate ex@(_ :@ (lex, _)) = eval ex
     eval (EApply1 f x :@ (l, t)) = evalApply1 f x l t
     eval (EApplyN f xs :@ (l, t)) = evalApplyN f xs l t
     eval (EPair a b :@ lt) = (:@ lt) <$> (EPair <$> eval a <*> eval b)
-    eval (ELambda1 v e _ :@ lt) = (:@ lt) <$> (ELambda1 v e <$> (fst <$> ask))
-    eval (ELambdaN vs e _ :@ lt) = (:@ lt) <$> (ELambdaN vs e <$> (fst <$> ask))
+    eval (ELambda1 v e _ :@ lt) = (:@ lt) <$> (ELambda1 v e <$> view lclEnv)
+    eval (ELambdaN vs e _ :@ lt) = (:@ lt) <$> (ELambdaN vs e <$> view lclEnv)
     eval (EQuote z :@ _) = pure z
     eval (EType t :@ l) = (:@ l) . EType <$> evaluateType t
     eval e = pure e
@@ -85,28 +86,28 @@ evaluate ex@(_ :@ (lex, _)) = eval ex
         ELambda1 (Variable v) e env :@ _ -> do
           x' <- eval x
           modifyError (CallSite l)
-            . local (\(_, n) -> (insert v x' env, n))
+            . local (lclEnv .~ insert v x' env)
             $ eval e
         ELambdaN vs e env :@ _ -> do
           mxs' <- eval x
           case nonEmpty <$> maybeList mxs' of
             Just (Just xs') ->
               modifyError (CallSite l)
-                . local (\(_, n) -> (foldl' insertVar env (zip vs $ toList xs'), n))
+                . local (lclEnv .~ foldl' insertVar env (zip vs $ toList xs'))
                 $ eval e
             Just Nothing -> eval e
             Nothing -> bug Unreachable
         EMacro1 (Variable v) e :@ _ -> do
           x' <- eval x
           modifyError (CallSite l)
-            . local (\(_, n) -> (insert v x' mempty, n))
+            . local (lclEnv .~ insert v x' mempty)
             $ eval e
         EMacroN vs e :@ _ -> do
           mxs' <- eval x
           case maybeList mxs' of
             Just xs' ->
               modifyError (CallSite l)
-                . local (\(_, n) -> (foldl' insertVar mempty (zip vs xs'), n))
+                . local (lclEnv .~ foldl' insertVar mempty (zip vs xs'))
                 $ eval e
             Nothing -> bug Unreachable
         EImplicit (Variable v) e env :@ (_, ZImplicit i _) -> do
@@ -114,7 +115,7 @@ evaluate ex@(_ :@ (lex, _)) = eval ex
           case ss of
             [s] ->
               modifyError (CallSite l)
-                . local (\(_, n) -> (insert v s env, n))
+                . local (lclEnv .~ insert v s env)
                 $ eval (EApply1 e x :@ (l, t))
             [] -> throwError (NoMatches $ project i)
             _ -> throwError (MultipleMatches (project i) (project <$> ss))
@@ -145,29 +146,29 @@ evaluate ex@(_ :@ (lex, _)) = eval ex
         ELambda1 (Variable v) e env :@ _ -> do
           x' <- eval (typedTuple xs)
           modifyError (CallSite l)
-            . local (\(_, n) -> (insert v x' env, n))
+            . local (lclEnv .~ insert v x' env)
             $ eval e
         ELambdaN vs e env :@ _ -> do
           xs' <- traverse eval xs
           modifyError (CallSite l)
-            . local (\(_, n) -> (foldl' insertVar env (zip vs xs'), n))
+            . local (lclEnv .~ foldl' insertVar env (zip vs xs'))
             $ eval e
         EMacro1 (Variable v) e :@ _ -> do
           x' <- eval (typedTuple xs)
           modifyError (CallSite l)
-            . local (\(_, n) -> (insert v x' mempty, n))
+            . local (lclEnv .~ insert v x' mempty)
             $ eval e
         EMacroN vs e :@ _ -> do
           xs' <- traverse eval xs
           modifyError (CallSite l)
-            . local (\(_, n) -> (foldl' insertVar mempty (zip vs xs'), n))
+            . local (lclEnv .~ foldl' insertVar mempty (zip vs xs'))
             $ eval e
         EImplicit (Variable v) e env :@ (_, ZImplicit i _) -> do
           ss <- findOfType i
           case ss of
             [s] ->
               modifyError (CallSite l)
-                . local (\(_, n) -> (insert v s env, n))
+                . local (lclEnv .~ insert v s env)
                 $ eval (EApplyN e xs :@ (l, t))
             [] -> throwError (NoMatches $ project i)
             _ -> throwError (MultipleMatches (project i) (project <$> ss))
@@ -200,7 +201,7 @@ evaluate ex@(_ :@ (lex, _)) = eval ex
 
     findOfType :: ZType (Typed l) -> m [Typed l]
     findOfType z = do
-      gbl <- snd <$> ask
+      gbl <- view gblEnv
       mapError (const lex <$>) $
         filterM (isSubtype z . exprType) (elems gbl)
 
@@ -210,7 +211,7 @@ evaluate ex@(_ :@ (lex, _)) = eval ex
 evaluateType :: (MonadEvaluator l m) => ZType (Typed l) -> m (ZType (Typed l))
 evaluateType (ZForall u@(Universal s) z) = do
   let u' = EType (ZUniversal u) :@ (mempty, ZType 0)
-   in ZForall u <$> local (first (insert s u')) (evaluateType z)
+   in ZForall u <$> local (lclEnv . at s ?~ u') (evaluateType z)
 evaluateType (ZFunction a b) = ZFunction <$> evaluateType a <*> evaluateType b
 evaluateType (ZImplicit a b) = ZImplicit <$> evaluateType a <*> evaluateType b
 evaluateType (ZPair a b) = ZPair <$> evaluateType a <*> evaluateType b
@@ -269,7 +270,7 @@ maybeSymbol _ = Nothing
 
 evaluateRaw :: (MonadEvaluator l m) => Maybe (Symbol, Raw l) -> Raw l -> m (Typed l)
 evaluateRaw m x = do
-  gbl <- snd <$> ask
+  gbl <- view gblEnv
   x' <- evaluatingStateT (emptyCheckerState gbl) $
     case m of
       Just (n, t) -> do
@@ -318,13 +319,13 @@ evaluateRaw m x = do
 
 macroExpand1 :: (MonadEvaluator l m) => Raw l -> m (Raw l)
 macroExpand1 w = do
-  gbl <- snd <$> ask
+  gbl <- view gblEnv
   evaluatingStateT (emptyCheckerState gbl) $ go w
   where
     go a@(RS "quote" :. _) = pure a
     go (RPair a@(RS s) b :# lq) = do
       let r' = RPair a (quoteList b) :# lq
-      f <- lookup s . snd <$> ask
+      f <- view (gblEnv . at s)
       case f of
         Just (EMacro1 {} :@ _) ->
           toRaw <$> (evaluate =<< liftChecker synthesize =<< analyzeUntyped r')
@@ -355,13 +356,10 @@ macroExpand w = do
     then pure w
     else macroExpand w'
 
-withEnvironment ::
-  (MonadState (ZState l) m) =>
-  ReaderT (Environment (Typed l), Environment (Typed l)) m a ->
-  m a
+withEnvironment :: (MonadState (ZState l) m) => ReaderT (EvalContext l) m a -> m a
 withEnvironment x = do
   env <- _environment <$> get
-  usingReaderT (mempty, env) x
+  usingReaderT (makeEvalContext env) x
 
 evaluateTopLevel' ::
   ( MonadState (ZState l) m,
@@ -374,11 +372,11 @@ evaluateTopLevel' ::
   m Typed'
 evaluateTopLevel' (RS "def" :. RS s :. e :. RU) = do
   e' <- withEnvironment $ evaluateRaw Nothing e
-  environment %= insert s e'
+  environment . at s ?= e'
   pure (EUnit :$ ZUnit)
 evaluateTopLevel' (RS "def" :. RS s :. t :. e :. RU) = do
   e' <- withEnvironment $ evaluateRaw (Just (s, t)) e
-  environment %= insert s e'
+  environment . at s ?= e'
   pure (EUnit :$ ZUnit)
 evaluateTopLevel' (RS "begin" :. r) =
   case maybeList r of

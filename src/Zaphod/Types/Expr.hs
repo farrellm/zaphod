@@ -6,6 +6,8 @@ module Zaphod.Types.Expr where
 import qualified Data.Text as T
 import qualified GHC.Exts as GE
 import qualified GHC.Show (Show (..))
+import Lens.Micro.Internal (At (..), Index, IxValue, Ixed (..))
+import Lens.Micro.Platform ()
 import Relude.Extra.Map (DynamicMap (..), StaticMap (..))
 import Zaphod.Types.Class (Location (..), Magma (..), MaybeList (..), Projection (project), Render (..))
 import Zaphod.Types.Location (LocA (..), LocB (..), LocF (..), LocU (..))
@@ -59,6 +61,16 @@ instance IsList (Environment e) where
   type Item (Environment e) = (Symbol, e)
   fromList = Environment . fromList
   toList = GE.toList . getEnvironment
+
+type instance Index (Environment e) = Symbol
+
+type instance IxValue (Environment e) = e
+
+instance Ixed (Environment e) where
+  ix k f (Environment m) = Environment <$> ix k f m
+
+instance At (Environment e) where
+  at k f (Environment m) = Environment <$> at k f m
 
 data Expr f
   = EType (ZType f)

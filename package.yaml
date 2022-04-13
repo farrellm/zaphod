@@ -39,8 +39,8 @@ dependencies:
     - hiding (Prelude)
 - containers
 - haskeline
-- microlens-mtl
-- microlens-th
+- microlens-platform
+- microlens
 - megaparsec
 - mtl
 - optparse-applicative

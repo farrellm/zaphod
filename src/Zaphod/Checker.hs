@@ -4,7 +4,7 @@
 module Zaphod.Checker (check, synthesize, subtype) where
 
 import qualified Data.Text as T
-import Lens.Micro.Mtl (use, (%=), (+=), (-=), (.=), (<<%=))
+import Lens.Micro.Platform (use, (%=), (+=), (-=), (.=), (<<%=))
 import Zaphod.Context
 import {-# SOURCE #-} Zaphod.Evaluator (evaluateType)
 import Zaphod.Types

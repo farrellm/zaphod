@@ -13,7 +13,7 @@ module Zaphod.Context
   )
 where
 
-import Lens.Micro.Mtl (use, (<~))
+import Lens.Micro.Platform (use, (<~))
 import Relude.Extra.Map ((!?))
 import Zaphod.Types
 

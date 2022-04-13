@@ -128,7 +128,7 @@ test = do
       Right v -> pure v
     withZaphod a = do
       env <- _environment <$> get
-      usingReaderT (mempty, env) $
+      usingReaderT (makeEvalContext env) $
         evaluatingStateT (emptyCheckerState env) a
     analyzed a =
       withZaphod
