@@ -17,6 +17,9 @@ deriving instance Eq (LocU Expr)
 
 deriving instance (Show l) => Show (LocF Expr l)
 
+instance Eq (LocF Expr l) where
+  (a :# _) == (b :# _) = a == b
+
 deriving instance Show (LocA Expr ZType)
 
 deriving instance Eq (LocA Expr ZType)
@@ -28,12 +31,6 @@ instance Eq (LocB Expr ZType l) where
 
 data ExprBug
   = EqUndefined
-  | StripTypeSpecial
-  | ListEmpty
-  | NotListZType (ZType Typed')
-  | NotListTyped Typed'
-  | NotListUntyped Untyped'
-  | UnwrapUntypedTyped (Typed ())
   deriving (Show)
 
 instance Exception ExprBug
@@ -103,6 +100,7 @@ data ZType f
   | ZPair (ZType f) (ZType f)
   | ZValue f
   | ZAny
+  | ZAnyType
   deriving (Show, Eq, Functor, Foldable, Traversable)
 
 instance Magma (ZType f) where
@@ -133,6 +131,7 @@ instance Render (ZType Untyped') where
       Nothing -> render (l, r)
   render (ZValue x) = "{" <> render x <> "}"
   render ZAny = "Any"
+  render ZAnyType = "AnyType"
 
 instance Render (ZType (Untyped l)) where
   render t = render (project t :: ZType Untyped')

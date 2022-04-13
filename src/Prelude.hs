@@ -30,4 +30,4 @@ debug t =
     else id
 
 debugM :: Applicative f => Text -> f ()
-debugM x = when enableDebug . traceM $ toString x
+debugM x = when enableDebug $ traceM' x

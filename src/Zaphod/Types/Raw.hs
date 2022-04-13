@@ -21,6 +21,8 @@ deriving instance Show (LocU RawF)
 
 deriving instance Eq (LocU RawF)
 
+deriving instance (Show l) => Show (LocF RawF l)
+
 instance Eq (Raw l) where
   (a :# _) == (b :# _) = a == b
 

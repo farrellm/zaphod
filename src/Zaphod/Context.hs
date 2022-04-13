@@ -105,6 +105,7 @@ substitute x y (ZValue e) = ZValue (substituteValue e)
 substitute _ _ z@ZUnit = z
 substitute _ _ z@ZSymbol = z
 substitute _ _ z@ZAny = z
+substitute _ _ z@ZAnyType = z
 substitute _ _ z@(ZType _) = z
 substitute _ _ z@(ZUniversal _) = z
 substitute _ _ z@(ZExistential _) = z
@@ -131,6 +132,7 @@ solveExistential z e = do
 isWellFormed :: ZType (Typed l) -> Context l -> Bool
 isWellFormed (ZType _) _ = True
 isWellFormed ZAny _ = True
+isWellFormed ZAnyType _ = True
 isWellFormed ZUnit _ = True
 isWellFormed ZSymbol _ = True
 isWellFormed (ZFunction a b) ctx = isWellFormed a ctx && isWellFormed b ctx

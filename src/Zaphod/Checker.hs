@@ -6,14 +6,8 @@ module Zaphod.Checker (check, synthesize, subtype) where
 import qualified Data.Text as T
 import Lens.Micro.Mtl (use, (%=), (+=), (-=), (.=), (<<%=))
 import Zaphod.Context
+import {-# SOURCE #-} Zaphod.Evaluator (evaluateType)
 import Zaphod.Types
-
-type MonadChecker l m =
-  ( MonadState (CheckerState l) m,
-    MonadError (CheckerException l) m,
-    Monoid l,
-    Location l
-  )
 
 bind2 :: (Monad m) => (a -> b -> m c) -> m a -> m b -> m c
 bind2 f x y = do
@@ -56,6 +50,7 @@ withUniversal alpha x = do
 applyCtxType :: (MonadState (CheckerState l) m) => ZType (Typed l) -> m (ZType (Typed l))
 applyCtxType z@(ZType _) = pure z
 applyCtxType ZAny = pure ZAny
+applyCtxType ZAnyType = pure ZAnyType
 applyCtxType z@(ZUniversal _) = pure z
 applyCtxType ZUnit = pure ZUnit
 applyCtxType ZSymbol = pure ZSymbol
@@ -79,6 +74,7 @@ applyCtxExpr (e :@ (l, t)) = liftA2 (:@) (traverse applyCtxExpr e) ((l,) <$> app
 notInFV :: Existential -> ZType (Typed l) -> Bool
 notInFV _ (ZType _) = True
 notInFV _ ZAny = True
+notInFV _ ZAnyType = True
 notInFV _ ZUnit = True
 notInFV _ (ZUniversal _) = True
 notInFV a (ZExistential b) = a /= b
@@ -91,6 +87,7 @@ notInFV a (ZValue x) = notInFV a (exprType x)
 
 isMonoType :: ZType (Typed l) -> Bool
 isMonoType ZAny = True
+isMonoType ZAnyType = True
 isMonoType ZUnit = True
 isMonoType ZSymbol = True
 isMonoType (ZUniversal _) = True
@@ -156,6 +153,16 @@ applySynth a b =
   logInfo ("app " <> render a <> " =>> " <> render b) $
     applySynth' a b
 
+checkType :: (MonadChecker l m) => Untyped l -> m (ZType (Typed l))
+checkType a =
+  logInfo ("cTy " <> render a <> " =: Type") $
+    checkType' a
+
+synthesizeType :: (MonadChecker l m) => ZType (Untyped l) -> m (ZType (Typed l))
+synthesizeType a =
+  logInfo ("sTy " <> render a) $
+    synthesizeType' a
+
 logInfo :: (Render a, MonadState (CheckerState l) m) => Text -> m a -> m a
 logInfo m x = do
   i <- mkIndent
@@ -175,7 +182,10 @@ logInfo m x = do
 
 subtype' :: (MonadChecker l m) => ZType (Typed l) -> ZType (Typed l) -> m ()
 -- <:Any
+subtype' a@(ZType _) ZAny = throwError $ NotSubtype (project a) ZAny mempty
+subtype' ZAnyType ZAny = throwError $ NotSubtype ZAnyType ZAny mempty
 subtype' _ ZAny = pass
+subtype' (ZType _) ZAnyType = pass
 -- <:Var
 subtype' (ZUniversal alpha) (ZUniversal beta) | alpha == beta = pass
 -- <:Unit
@@ -350,6 +360,9 @@ check' (EPair e1 e2 :# l) (ZPair b1 b2) = do
   a1' <- e1 `check` b1
   a2' <- e2 `check` b2
   applyCtxExpr (EPair a1' a2' :@ (l, ZPair (exprType a1') (exprType a2')))
+-- ->Type
+check' e@(_ :# l) (ZType 0) = (\t -> EType t :@ (l, ZType 0)) <$> checkType e
+check' e@(_ :# l) ZAnyType = (\t -> EType t :@ (l, ZAnyType)) <$> checkType e
 -- Sub
 check' e@(_ :# l) b = do
   a <- synthesize e
@@ -373,27 +386,48 @@ checkFunctionN xs e cs b = do
     context %= dropVar x
   pure e'
 
-synthesizeType :: forall l m. (MonadChecker l m) => ZType (Untyped l) -> m (ZType (Typed l))
-synthesizeType (ZType n) = pure $ ZType n
-synthesizeType ZUnit = pure ZUnit
-synthesizeType ZSymbol = pure ZSymbol
-synthesizeType ZAny = pure ZAny
-synthesizeType (ZUniversal u) = pure $ ZUniversal u
-synthesizeType (ZExistential e) = pure $ ZExistential e
-synthesizeType (ZForall u@(Universal s) t) = do
-  k <- ZExistential <$> nextExtential
-  let v = Variable s
-  context %= (CVariable v k <:)
+unwrapType :: Typed l -> ZType (Typed l)
+unwrapType (EType z :@ _) = z
+unwrapType v = ZValue v
+
+checkType' :: (MonadChecker l m) => Untyped l -> m (ZType (Typed l))
+checkType' (EUnit :# _) = pure ZUnit
+checkType' (EApplyN (ESymbol "cons" :# _) [a, b] :# _) =
+  ZPair <$> checkType a <*> checkType b
+checkType' (EType z :# _) = synthesizeType z
+checkType' e@(_ :# l) = do
+  e' <- synthesize e
+  case exprType e' of
+    ZType _ -> pure $ unwrapType e'
+    t -> throwError $ NotSubtype (project t) ZAnyType l
+
+synthesizeType' :: (MonadChecker l m) => ZType (Untyped l) -> m (ZType (Typed l))
+synthesizeType' (ZType n) = pure $ ZType n
+synthesizeType' ZUnit = pure ZUnit
+synthesizeType' ZSymbol = pure ZSymbol
+synthesizeType' ZAny = pure ZAny
+synthesizeType' ZAnyType = pure ZAnyType
+synthesizeType' (ZUniversal u) = pure $ ZUniversal u
+synthesizeType' (ZExistential e) = pure $ ZExistential e
+synthesizeType' (ZForall u@(Universal s) t) = do
+  let x = Variable s
+  context %= (CVariable x (ZType 0) <:)
   t' <- synthesizeType t
-  context %= dropVar v
-  ZForall u <$> applyCtxType t'
-synthesizeType (ZFunction a b) =
+  context %= dropVar x
+  pure $ ZForall u t'
+synthesizeType' (ZFunction a b) =
   ZFunction <$> synthesizeType a <*> synthesizeType b
-synthesizeType (ZImplicit i z) =
+synthesizeType' (ZImplicit i z) =
   ZImplicit <$> synthesizeType i <*> synthesizeType z
-synthesizeType (ZPair a b) =
+synthesizeType' (ZPair a b) =
   ZPair <$> synthesizeType a <*> synthesizeType b
-synthesizeType (ZValue v) = ZValue <$> synthesize v
+synthesizeType' (ZValue (EUnit :# _)) = pure ZUnit
+synthesizeType' (ZValue (EType z :# _)) = synthesizeType z
+synthesizeType' (ZValue (EApplyN (ESymbol "cons" :# _) [a, b] :# _)) = do
+  a' <- checkType a
+  b' <- checkType b
+  pure $ ZPair a' b'
+synthesizeType' (ZValue v) = checkType v
 
 synthesize' :: forall l m. (MonadChecker l m) => Untyped l -> m (Typed l)
 -- Var
@@ -405,8 +439,9 @@ synthesize' (ESymbol a :# l) = do
 -- Anno
 synthesize' (EAnnotation e a :# l) = do
   a' <- synthesizeType a
-  e' <- e `check` a'
-  applyCtxExpr (EAnnotation e' a' :@ (l, a'))
+  a'' <- mapError CheckerEvaluatorExc $ evaluateType a'
+  e' <- e `check` a''
+  applyCtxExpr (EAnnotation e' a'' :@ (l, a''))
 -- 1|=>
 synthesize' (EUnit :# l) = pure (EUnit :@ (l, ZUnit))
 -- ->|=>

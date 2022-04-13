@@ -24,7 +24,7 @@ data EvaluatorException l
   | InvalidLambda (Raw l)
   | InvalidMacro (Raw l)
   | CallSite l (EvaluatorException l)
-  deriving (Functor)
+  deriving (Show, Functor)
 
 data CheckerException l
   = ArgumentMissmatch [Variable] (ZType Typed')
@@ -33,6 +33,7 @@ data CheckerException l
   | NotSubtype (ZType Typed') (ZType Typed') l
   | UndefinedVariable Variable
   | ExistentialAlreadySolved (ZType Typed') Existential (ZType Typed')
+  | CheckerEvaluatorExc (EvaluatorException l)
   deriving (Show, Functor)
 
 mapError :: (MonadError a m) => (b -> a) -> ExceptT b m c -> m c
