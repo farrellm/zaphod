@@ -13,7 +13,7 @@ where
 import Control.Monad.Except (liftEither)
 import qualified Data.Map as M
 import qualified Data.Set as S
-import Lens.Micro.Platform (at, view, (%=), (.~), (?=), (?~))
+import Lens.Micro.Platform (at, view, (%=), (%~), (.~), (?=), (?~))
 import Relude.Extra.Map (elems, insert)
 import Zaphod.Base (zTrue)
 import Zaphod.Checker (check, subtype, synthesize)
@@ -38,17 +38,42 @@ liftChecker f x = do
 liftNative :: (MonadError (EvaluatorException l) m) => l -> Either (NativeException ()) a -> m a
 liftNative l = liftEither . first (NativeException . fmap (const l))
 
-isSubtype :: (MonadEvaluator l m) => ZType (Typed l) -> ZType (Typed l) -> m Bool
-isSubtype a b = do
-  gbl <- view gblEnv
-  e <- runExceptT (evaluatingStateT (emptyCheckerState gbl) $ subtype a b)
-  case e of
-    Right () -> pure True
-    Left NotSubtype {} -> pure False
-    Left err -> throwError (CheckerException err)
+findOfType :: (MonadEvaluator l m) => ZType (Typed l) -> m (Typed l)
+findOfType z = do
+  env <- liftA2 (<>) (view lclEnv) (view gblEnv)
+  let ctx = emptyCheckerState env
+      vs = elems env
+  xs <- mapError CheckerException $ filterM (isSubtype ctx z . exprType) vs
+  case xs of
+    [x] -> pure x
+    [] -> throwError (NoMatches $ project z)
+    _ -> throwError (MultipleMatches (project z) (project <$> xs))
+  where
+    isSubtype ctx a b = do
+      e <- runExceptT (evaluatingStateT ctx $ subtype a b)
+      case e of
+        Right () -> pure True
+        Left NotSubtype {} -> pure False
+        Left err -> throwError err
+
+infer :: (MonadEvaluator l m) => Typed l -> m (Typed l)
+infer (EApplyN f@(_ :@ (l, ZImplicit a b)) xs :@ lt) = do
+  i <- findOfType a
+  e <- infer (EApply1 f i :@ (l, b))
+  pure (EApplyN e xs :@ lt)
+infer (ELambda1 v e env :@ lt) = (:@ lt) <$> (ELambda1 v <$> infer e <*> pure env)
+infer (ELambdaN vs e env :@ lt) = (:@ lt) <$> (ELambdaN vs <$> infer e <*> pure env)
+infer (EImplicit v@(Variable s) e :@ lt@(l, ZImplicit a _)) = do
+  e' <- local (lclEnv %~ insert s (ESymbol s :@ (l, a))) $ infer e
+  pure (EImplicit v e' :@ lt)
+infer (EApply1 f e :@ lt) = (:@ lt) <$> (EApply1 <$> infer f <*> infer e)
+infer (EApplyN f es :@ lt) = (:@ lt) <$> (EApplyN <$> infer f <*> traverse infer es)
+infer (EPair a b :@ lt) = (:@ lt) <$> (EPair <$> infer a <*> infer b)
+infer (EAnnotation a z :@ lt) = (:@ lt) <$> (EAnnotation <$> infer a <*> pure z)
+infer x = pure x
 
 evaluate :: forall l m. (MonadEvaluator l m) => Typed l -> m (Typed l)
-evaluate ex@(_ :@ (lex, _)) = eval ex
+evaluate = eval
   where
     eval :: Typed l -> m (Typed l)
     eval (ESymbol s :@ (_, z)) = do
@@ -110,15 +135,11 @@ evaluate ex@(_ :@ (lex, _)) = eval ex
                 . local (lclEnv .~ foldl' insertVar mempty (zip vs xs'))
                 $ eval e
             Nothing -> bug Unreachable
-        EImplicit (Variable v) e env :@ (_, ZImplicit i _) -> do
-          ss <- findOfType i
-          case ss of
-            [s] ->
-              modifyError (CallSite l)
-                . local (lclEnv .~ insert v s env)
-                $ eval (EApply1 e x :@ (l, t))
-            [] -> throwError (NoMatches $ project i)
-            _ -> throwError (MultipleMatches (project i) (project <$> ss))
+        EImplicit (Variable v) e :@ _ -> do
+          x' <- eval x
+          modifyError (CallSite l)
+            . local (lclEnv %~ insert v x')
+            $ eval e
         ENative (Native g) :@ _ -> do
           x' <- eval x
           case maybeList x' of
@@ -163,15 +184,6 @@ evaluate ex@(_ :@ (lex, _)) = eval ex
           modifyError (CallSite l)
             . local (lclEnv .~ foldl' insertVar mempty (zip vs xs'))
             $ eval e
-        EImplicit (Variable v) e env :@ (_, ZImplicit i _) -> do
-          ss <- findOfType i
-          case ss of
-            [s] ->
-              modifyError (CallSite l)
-                . local (lclEnv .~ insert v s env)
-                $ eval (EApplyN e xs :@ (l, t))
-            [] -> throwError (NoMatches $ project i)
-            _ -> throwError (MultipleMatches (project i) (project <$> ss))
         ENative (Native g) :@ _ ->
           case xs of
             [x] -> do
@@ -198,12 +210,6 @@ evaluate ex@(_ :@ (lex, _)) = eval ex
           modifyError (CallSite l) $
             setLocation l <$> liftIO g
         _ -> debug (render f') $ bug Unreachable
-
-    findOfType :: ZType (Typed l) -> m [Typed l]
-    findOfType z = do
-      gbl <- view gblEnv
-      mapError (const lex <$>) $
-        filterM (isSubtype z . exprType) (elems gbl)
 
     insertVar :: Environment a -> (Variable, a) -> Environment a
     insertVar env (Variable v, x) = insert v x env
@@ -234,7 +240,7 @@ analyzeUntyped (RS "lambda" `RPair` (mxs :. e :. RU) :# l)
     (:# l) <$> (ELambdaN (Variable <$> vs) <$> analyzeUntyped e <*> pure mempty)
 analyzeUntyped r@(RS "lambda" `RPair` _ :# _) = throwError (InvalidLambda r)
 analyzeUntyped (RS "implicit" `RPair` (RS x :. e :. RU) :# l) =
-  (:# l) <$> (EImplicit (Variable x) <$> analyzeUntyped e <*> pure mempty)
+  (:# l) <$> (EImplicit (Variable x) <$> analyzeUntyped e)
 analyzeUntyped (RS "macro" `RPair` (RS x :. e :. RU) :# l) =
   (:# l) <$> (EMacro1 (Variable x) <$> analyzeUntyped e)
 analyzeUntyped (RS "macro" `RPair` (mxs :. e :. RU) :# l)
@@ -277,9 +283,9 @@ evaluateRaw m x = do
         t' <- evaluate =<< liftChecker (`check` ZAnyType) =<< analyzeUntyped t
         let t'' = unwrapType t'
         context %= (CVariable (Variable n) t'' <:)
-        r <- evaluate =<< liftChecker (`check` t'') =<< analyzeUntyped x
+        r <- evaluate =<< infer =<< liftChecker (`check` t'') =<< analyzeUntyped x
         pure $ setType t'' r
-      Nothing -> evaluate =<< liftChecker synthesize =<< analyzeUntyped x
+      Nothing -> evaluate =<< infer =<< liftChecker synthesize =<< analyzeUntyped x
   pure (omap universalize x')
   where
     universalize z =

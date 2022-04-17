@@ -78,7 +78,7 @@ data Expr f
   | ESymbol Symbol
   | ELambda1 Variable f (Environment f)
   | ELambdaN [Variable] f (Environment f)
-  | EImplicit Variable f (Environment f)
+  | EImplicit Variable f
   | EMacro1 Variable f
   | EMacroN [Variable] f
   | EApply1 f f

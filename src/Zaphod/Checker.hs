@@ -339,9 +339,9 @@ check' (ELambdaN xs e _ :# l) z@(ZFunction a b)
     do
       e' <- checkFunctionN xs e cs b
       applyCtxExpr (ELambdaN xs e' mempty :@ (l, z))
-check' (EImplicit x e _ :# l) z@(ZImplicit a b) = do
+check' (EImplicit x e :# l) z@(ZImplicit a b) = do
   e' <- checkFunction1 x e a b
-  applyCtxExpr (EImplicit x e' mempty :@ (l, z))
+  applyCtxExpr (EImplicit x e' :@ (l, z))
 check' (EMacro1 x e :# l) z@(ZFunction a b) = do
   e'' <- checkFunction1 x e a b
   applyCtxExpr (EMacro1 x e'' :@ (l, z))
@@ -451,9 +451,9 @@ synthesize' (ELambda1 x e _ :# l) = do
 synthesize' (ELambdaN xs e _ :# l) = do
   (e', alphaHats, betaHat) <- synthesizeFunctionN xs e
   applyCtxExpr (ELambdaN xs e' mempty :@ (l, ZFunction (typeTuple alphaHats) betaHat))
-synthesize' (EImplicit x e _ :# l) = do
+synthesize' (EImplicit x e :# l) = do
   (e', alphaHat, betaHat) <- synthesizeFunction1 x e
-  applyCtxExpr (EImplicit x e' mempty :@ (l, ZImplicit alphaHat betaHat))
+  applyCtxExpr (EImplicit x e' :@ (l, ZImplicit alphaHat betaHat))
 synthesize' (EMacro1 x e :# l) = do
   (e', alphaHat, betaHat) <- synthesizeFunction1 x e
   applyCtxExpr (EMacro1 x e' :@ (l, ZFunction alphaHat betaHat))
