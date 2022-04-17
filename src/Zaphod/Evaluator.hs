@@ -107,109 +107,57 @@ evaluate = eval
 
     evalApply1 f x l t = do
       f' <- eval f
-      setType t <$> case f' of
-        ELambda1 (Variable v) e env :@ _ -> do
-          x' <- eval x
-          modifyError (CallSite l)
-            . local (lclEnv .~ insert v x' env)
-            $ eval e
-        ELambdaN vs e env :@ _ -> do
-          mxs' <- eval x
-          case nonEmpty <$> maybeList mxs' of
-            Just (Just xs') ->
-              modifyError (CallSite l)
-                . local (lclEnv .~ foldl' insertVar env (zip vs $ toList xs'))
-                $ eval e
-            Just Nothing -> eval e
-            Nothing -> bug Unreachable
-        EMacro1 (Variable v) e :@ _ -> do
-          x' <- eval x
-          modifyError (CallSite l)
-            . local (lclEnv .~ insert v x' mempty)
-            $ eval e
-        EMacroN vs e :@ _ -> do
-          mxs' <- eval x
-          case maybeList mxs' of
-            Just xs' ->
-              modifyError (CallSite l)
-                . local (lclEnv .~ foldl' insertVar mempty (zip vs xs'))
-                $ eval e
-            Nothing -> bug Unreachable
-        EImplicit (Variable v) e :@ _ -> do
-          x' <- eval x
-          modifyError (CallSite l)
-            . local (lclEnv %~ insert v x')
-            $ eval e
-        ENative (Native g) :@ _ -> do
-          x' <- eval x
-          case maybeList x' of
-            Just [a] ->
-              modifyError (CallSite l)
-                . liftNative l
-                $ setLocation l <$> g (project a)
-            _ -> bug Unreachable
-        ENative' (Native' g) :@ _ -> do
-          x' <- eval x
-          case maybeList x' of
-            Just [a] ->
-              modifyError (CallSite l)
-                . liftNative l
-                $ g a
-            _ -> bug Unreachable
-        ENativeIO (NativeIO g) :@ _ ->
-          modifyError (CallSite l) $
-            setLocation l <$> liftIO g
-        _ -> bug Unreachable
+      x' <- eval x
+      modifyError (CallSite l) $
+        setType t <$> case f' of
+          ELambda1 (Variable v) e env :@ _ ->
+            local (lclEnv .~ insert v x' env) $ eval e
+          ELambdaN vs e env :@ _ ->
+            case maybeList x' of
+              Just xs' -> local (lclEnv .~ foldl' insertVar env (zip vs xs')) $ eval e
+              Nothing -> bug Unreachable
+          EMacro1 (Variable v) e :@ _ ->
+            local (lclEnv .~ insert v x' mempty) $ eval e
+          EMacroN vs e :@ _ ->
+            case maybeList x' of
+              Just xs' -> local (lclEnv .~ foldl' insertVar mempty (zip vs xs')) $ eval e
+              Nothing -> bug Unreachable
+          EImplicit (Variable v) e :@ _ ->
+            local (lclEnv %~ insert v x') $ eval e
+          ENative (Native g) :@ _ ->
+            case maybeList x' of
+              Just [a] -> liftNative l $ setLocation l <$> g (project a)
+              _ -> bug Unreachable
+          ENative' (Native' g) :@ _ ->
+            case maybeList x' of
+              Just [a] -> liftNative l $ g a
+              _ -> bug Unreachable
+          ENativeIO (NativeIO g) :@ _ -> setLocation l <$> liftIO g
+          _ -> bug Unreachable
 
     evalApplyN f xs l t = do
       f' <- eval f
-      setType t <$> case f' of
-        ELambda1 (Variable v) e env :@ _ -> do
-          x' <- eval (typedTuple xs)
-          modifyError (CallSite l)
-            . local (lclEnv .~ insert v x' env)
-            $ eval e
-        ELambdaN vs e env :@ _ -> do
-          xs' <- traverse eval xs
-          modifyError (CallSite l)
-            . local (lclEnv .~ foldl' insertVar env (zip vs xs'))
-            $ eval e
-        EMacro1 (Variable v) e :@ _ -> do
-          x' <- eval (typedTuple xs)
-          modifyError (CallSite l)
-            . local (lclEnv .~ insert v x' mempty)
-            $ eval e
-        EMacroN vs e :@ _ -> do
-          xs' <- traverse eval xs
-          modifyError (CallSite l)
-            . local (lclEnv .~ foldl' insertVar mempty (zip vs xs'))
-            $ eval e
-        ENative (Native g) :@ _ ->
-          case xs of
-            [x] -> do
-              x' <- eval x
-              modifyError (CallSite l)
-                . liftNative l
-                $ setLocation l <$> g (project x')
-            _ -> do
-              xs' <- eval (typedTuple xs)
-              liftNative l $ setLocation l <$> g (project xs')
-        ENative' (Native' g) :@ _ ->
-          case xs of
-            [x] -> do
-              x' <- eval x
-              modifyError (CallSite l)
-                . liftNative l
-                $ g x'
-            _ -> do
-              xs' <- eval (typedTuple xs)
-              modifyError (CallSite l)
-                . liftNative l
-                $ g xs'
-        ENativeIO (NativeIO g) :@ _ ->
-          modifyError (CallSite l) $
-            setLocation l <$> liftIO g
-        _ -> debug (render f') $ bug Unreachable
+      xs' <- traverse eval xs
+      modifyError (CallSite l) $
+        setType t <$> case f' of
+          ELambda1 (Variable v) e env :@ _ ->
+            local (lclEnv .~ insert v (typedTuple xs') env) $ eval e
+          ELambdaN vs e env :@ _ ->
+            local (lclEnv .~ foldl' insertVar env (zip vs xs')) $ eval e
+          EMacro1 (Variable v) e :@ _ ->
+            local (lclEnv .~ insert v (typedTuple xs') mempty) $ eval e
+          EMacroN vs e :@ _ ->
+            local (lclEnv .~ foldl' insertVar mempty (zip vs xs')) $ eval e
+          ENative (Native g) :@ _ ->
+            case xs' of
+              [x'] -> liftNative l $ setLocation l <$> g (project x')
+              _ -> liftNative l $ setLocation l <$> g (project $ typedTuple xs')
+          ENative' (Native' g) :@ _ ->
+            case xs' of
+              [x'] -> liftNative l $ g x'
+              _ -> liftNative l $ g (typedTuple xs')
+          ENativeIO (NativeIO g) :@ _ -> setLocation l <$> liftIO g
+          _ -> debug (render f') $ bug Unreachable
 
     insertVar :: Environment a -> (Variable, a) -> Environment a
     insertVar env (Variable v, x) = insert v x env
