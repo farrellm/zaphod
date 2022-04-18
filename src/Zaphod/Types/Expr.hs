@@ -79,8 +79,8 @@ data Expr f
   | ELambda1 Variable f (Environment f)
   | ELambdaN [Variable] f (Environment f)
   | EImplicit Variable f
-  | EMacro1 Variable f
-  | EMacroN [Variable] f
+  | EMacro1 Variable f (Environment f)
+  | EMacroN [Variable] f (Environment f)
   | EApply1 f f
   | EApplyN f [f]
   | EPair f f

@@ -10,7 +10,7 @@ import Zaphod.Types.State as X
 import Zaphod.Types.Wrapper as X
 
 type MonadChecker l m =
-  ( MonadReader (EvalContext l) m,
+  ( MonadReader (ZState l) m,
     MonadState (CheckerState l) m,
     MonadError (CheckerException l) m,
     MonadIO m,
@@ -19,7 +19,7 @@ type MonadChecker l m =
   )
 
 type MonadEvaluator l m =
-  ( MonadReader (EvalContext l) m,
+  ( MonadReader (ZState l) m,
     MonadError (EvaluatorException l) m,
     MonadIO m,
     Monoid l,

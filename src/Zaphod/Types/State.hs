@@ -30,12 +30,5 @@ emptyCheckerState env =
       _depth = 0
     }
 
-data EvalContext l = EvalContext
-  { _lclEnv :: Environment (Typed l),
-    _gblEnv :: Environment (Typed l)
-  }
-
-makeEvalContext :: Environment (Typed l) -> EvalContext l
-makeEvalContext gbl = EvalContext {_lclEnv = mempty, _gblEnv = gbl}
-
-makeLenses ''EvalContext
+freezeState :: (MonadState s m) => ReaderT s m a -> m a
+freezeState x = runReaderT x =<< get
