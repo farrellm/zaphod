@@ -141,7 +141,7 @@ instance Render (ZType Untyped') where
     case maybeList p of
       Just xs -> render xs
       Nothing -> render (l, r)
-  render (ZValue x) = "{" <> render x <> "}"
+  render (ZValue x) = render x
   render ZAny = "Any"
   render ZAnyType = "AnyType"
 
@@ -208,14 +208,14 @@ instance MaybeList (Typed l) where
 instance Render Untyped' where
   render e@(LocU e') = go e'
     where
-      go (EType z) = "[" <> render z <> "]"
+      go (EType z) = render z
       go EUnit = "()"
       go (ESymbol t) = render t
-      go ELambda1 {} = "<lambda>"
-      go ELambdaN {} = "<lambda>"
-      go EImplicit {} = "<implicit>"
-      go (EMacro1 v x) = "(macro " <> render v <> " " <> render x <> ")"
-      go (EMacroN vs x) = "(macro " <> render vs <> " " <> render x <> ")"
+      go (ELambda1 v x _) = "(\\" <> render v <> " " <> render x <> ")"
+      go (ELambdaN v x _) = "(\\" <> render v <> " " <> render x <> ")"
+      go (EImplicit v x) = "(implicit " <> render v <> " " <> render x <> ")"
+      go (EMacro1 v x _) = "(macro " <> render v <> " " <> render x <> ")"
+      go (EMacroN vs x _) = "(macro " <> render vs <> " " <> render x <> ")"
       go (EPair l r) =
         case maybeList e of
           Just xs -> render xs
