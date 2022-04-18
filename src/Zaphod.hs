@@ -31,9 +31,11 @@ emptyZState =
 printError :: (MonadIO m) => EvaluatorException (Maybe Loc) -> m ()
 printError err = do
   case err of
-    NoMatches z ->
+    NoMatches z l -> do
+      printLocation l
       putTextLn ("No implicit arguments available of type: " <> render z)
-    MultipleMatches z es -> do
+    MultipleMatches z es l -> do
+      printLocation l
       putTextLn ("Multiple implicit arguments available of type: " <> render z)
       for_ es $ \e ->
         putTextLn ("- " <> render e)

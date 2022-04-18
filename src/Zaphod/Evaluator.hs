@@ -38,16 +38,16 @@ liftChecker f x = do
 liftNative :: (MonadError (EvaluatorException l) m) => l -> Either (NativeException ()) a -> m a
 liftNative l = liftEither . first (NativeException . fmap (const l))
 
-findOfType :: (MonadEvaluator l m) => ZType (Typed l) -> m (Typed l)
-findOfType z = do
+findOfType :: (MonadEvaluator l m) => l -> ZType (Typed l) -> m (Typed l)
+findOfType l z = do
   env <- view environment
   let ctx = emptyCheckerState env
       vs = elems env
   xs <- mapError CheckerException $ filterM (isSubtype ctx z . exprType) vs
   case xs of
     [x] -> pure x
-    [] -> throwError (NoMatches $ project z)
-    _ -> throwError (MultipleMatches (project z) (project <$> xs))
+    [] -> throwError (NoMatches (project z) l)
+    _ -> throwError (MultipleMatches (project z) (project <$> xs) l)
   where
     isSubtype ctx a b = do
       e <- runExceptT (evaluatingStateT ctx $ subtype a b)
@@ -58,7 +58,7 @@ findOfType z = do
 
 infer :: (MonadEvaluator l m) => Typed l -> m (Typed l)
 infer (EApplyN f@(_ :@ (l, ZImplicit a b)) xs :@ lt) = do
-  i <- findOfType a
+  i <- findOfType l a
   e <- infer (EApply1 f i :@ (l, b))
   pure (EApplyN e xs :@ lt)
 infer (ELambda1 v e env :@ lt) = (:@ lt) <$> (ELambda1 v <$> infer e <*> pure env)

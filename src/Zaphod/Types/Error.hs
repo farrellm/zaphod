@@ -14,8 +14,8 @@ data ZaphodBug
 instance Exception ZaphodBug
 
 data EvaluatorException l
-  = NoMatches (ZType Typed')
-  | MultipleMatches (ZType Typed') [Typed']
+  = NoMatches (ZType Typed') l
+  | MultipleMatches (ZType Typed') [Typed'] l
   | InvalidParameters (Raw l)
   | NotList (Raw l)
   | BadBegin (Raw l)
