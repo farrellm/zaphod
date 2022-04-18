@@ -123,6 +123,18 @@ isDeeper tau alphaHat = do
     dropExistential (Context (CUnsolved b : rs)) | alphaHat == b = Context rs
     dropExistential (Context (_ : rs)) = dropExistential $ Context rs
 
+existentializeValue :: (MonadChecker l m) => Typed l -> m (Typed l, [(ZType (Typed l), Existential)])
+existentializeValue e@(EUnit :@ _) = pure (e, [])
+existentializeValue e@(ESymbol _ :@ _) = pure (e, [])
+existentializeValue (EType t :@ lt) = do
+  hat <- nextExtential
+  pure (EType (ZExistential hat) :@ lt, [(t, hat)])
+existentializeValue (EPair a b :@ lt) = do
+  (a', aHat) <- existentializeValue a
+  (b', bHat) <- existentializeValue b
+  pure (EPair a' b' :@ lt, aHat ++ bHat)
+existentializeValue e = bug $ NotImplemented (render e)
+
 subtype :: (MonadChecker l m) => ZType (Typed l) -> ZType (Typed l) -> m ()
 subtype a b =
   logInfo ("sub " <> render a <> " <: " <> render b) $
@@ -258,6 +270,12 @@ instantiateL' alphaHat x = do
         alphaHat
       (alphaHat1 `instantiateL`) =<< applyCtxType a1
       (alphaHat2 `instantiateL`) =<< applyCtxType a2
+    -- InstLValue
+    go _ (ZValue v) = do
+      (v', hats) <- withHole alphaHat $ existentializeValue v
+      solveExistential (ZValue v') alphaHat
+      for_ hats $ \(t, hat) ->
+        (hat `instantiateL`) =<< applyCtxType t
     -- InstLAllR
     go _ (ZForall beta b) =
       withUniversal beta $
@@ -304,6 +322,12 @@ instantiateR' x alphaHat = do
         alphaHat
       (`instantiateR` alphaHat1) =<< applyCtxType a1
       (`instantiateR` alphaHat2) =<< applyCtxType a2
+    -- InstRValue
+    go _ (ZValue v) = do
+      (v', hats) <- withHole alphaHat $ existentializeValue v
+      solveExistential (ZValue v') alphaHat
+      for_ hats $ \(t, hat) ->
+        (`instantiateR` hat) =<< applyCtxType t
     -- InstRAllL
     go _ (ZForall beta b) =
       markExtential $ \betaHat ->

@@ -144,5 +144,12 @@ isWellFormed (ZExistential a) (Context (CSolved b _ : _)) | a == b = True
 isWellFormed z@(ZUniversal _) (Context (_ : rs)) = isWellFormed z (Context rs)
 isWellFormed z@(ZExistential _) (Context (_ : rs)) = isWellFormed z (Context rs)
 isWellFormed z@(ZForall _ _) _ = bug (NotMonotype $ project z)
-isWellFormed (ZValue x) ctx = isWellFormed (exprType x) ctx
+isWellFormed (ZValue x) ctx = isWellFormedExpr x
+  where
+    isWellFormedExpr (EUnit :@ _) = True
+    isWellFormedExpr (ESymbol _ :@ _) = True
+    isWellFormedExpr (EPair a b :@ _) =
+      isWellFormedExpr a && isWellFormedExpr b
+    isWellFormedExpr (EType t :@ _) = isWellFormed t ctx
+    isWellFormedExpr t = bug (NotImplemented $ render t)
 isWellFormed _ (Context []) = False
