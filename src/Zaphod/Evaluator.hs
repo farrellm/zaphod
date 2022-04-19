@@ -204,7 +204,7 @@ analyzeUntyped (RS ":" `RPair` (e :. t :. RU) :# l) =
   (:# l) <$> (EAnnotation <$> analyzeUntyped e <*> analyzeType t)
 analyzeUntyped (RS "quote" `RPair` (x :. RU) :# l) =
   pure $ EQuote (analyzeQuoted x) :# l
-analyzeUntyped (RS "_forall" `RPair` (RS u :. z :. RU) :# l) =
+analyzeUntyped (RS "forall" `RPair` (RS u :. z :. RU) :# l) =
   (\t -> EType (ZForall (Universal u) t) :# l) <$> analyzeType z
 analyzeUntyped (RS "->" `RPair` (a :. b :. RU) :# l) =
   liftA2 (\x y -> EType (ZFunction x y) :# l) (analyzeType a) (analyzeType b)

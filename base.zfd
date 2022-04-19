@@ -34,7 +34,7 @@
 (def cdddr (-> [Any] Any) (lambda (x) (cdr (cdr (cdr x)))))
 
 (def top-foldr
-     (_forall a (_forall b (-> [(-> [b a] a) a Any] a)))
+     (forall a (forall b (-> [(-> [b a] a) a Any] a)))
      (lambda (f i l)
        (if (is-nil l) i
            (f (unsafe-coerce (car l))
@@ -59,7 +59,7 @@
 (def mk-forall
      (-> [Symbol Any] Any)
      (lambda (u e)
-       ['_forall u e]))
+       ['forall u e]))
 
 (def -forall
      (-> [Any Any] Any)
@@ -67,7 +67,7 @@
        (top-foldr mk-forall e us)))
 
 (def mk-let
-     (_forall a (-> [[Symbol Any] a] Any))
+     (forall a (-> [[Symbol Any] a] Any))
      (lambda (b e)
        (if (symbol-eq (fst b) '_)
            (: e Any)
