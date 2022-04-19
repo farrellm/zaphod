@@ -6,18 +6,18 @@
      (-> (cons Any ()) Any)
      (unsafe-coerce snd))
 
-(def tuple'
+(def -tuple
      (-> (cons Any ()) Any)
      (lambda (t)
        (if (is-nil t) (: () Any)
            (cons 'cons
                  (cons (car t)
-                       (cons (tuple' (cdr t))
+                       (cons (-tuple (cdr t))
                              ()))))))
 
 (def tuple
      (-> Any Any)
-     (macro t (tuple' t)))
+     (macro t (-tuple t)))
 
 (def caar (-> [Any] Any) (lambda (x) (car (car x))))
 (def cdar (-> [Any] Any) (lambda (x) (cdr (car x))))
@@ -61,13 +61,13 @@
      (lambda (u e)
        ['_forall u e]))
 
-(def forall
+(def -forall
      (-> [Any Any] Any)
-     (macro (us e)
+     (lambda (us e)
        (top-foldr mk-forall e us)))
 
 (def mk-let
-     (forall (a) (-> [[Symbol Any] a] Any))
+     (_forall a (-> [[Symbol Any] a] Any))
      (lambda (b e)
        (if (symbol-eq (fst b) '_)
            (: e Any)
@@ -78,7 +78,7 @@
      (macro (ps e)
        (top-foldr mk-let e ps)))
 
-(def defn'
+(def -defn
      (-> [Symbol Any Any Any] Any)
      (lambda (n p t e)
        (if (is-symbol (car t))
@@ -86,11 +86,11 @@
            (let ((a (alist-lookup' 'forall () t))
                  (c (alist-lookup' '=> () t))
                  (f (alist-lookup '-> t))
-                 (t' ['forall a
+                 (t' (-forall a
                               (top-foldr
                                (lambda (i r) (: ['=> i r] Any))
                                (cons '-> f)
-                               c)]))
+                               c))))
              ['def n t'
                    (top-foldr
                     (lambda (_ r) (: ['implicit (unsafe-gensym) r] Any))
@@ -100,7 +100,7 @@
 (def defn
      (-> [(cons Symbol Any) Any Any] Any)
      (macro (p t e)
-       (defn' (fst p) (snd p) t e)))
+       (-defn (fst p) (snd p) t e)))
 
 (def defmacro
      (-> [(cons Symbol Any) Any Any] Any)
@@ -108,41 +108,35 @@
        ['def (car p) t ['macro (cdr p) e]]))
 
 (defn (top-foldl f i l)
-  (forall (a b) (-> [(-> [a b] a) a Any] a))
+  ((forall a b) (-> [(-> [a b] a) a Any] a))
   (if (is-nil l) i
       (top-foldl f (f i (unsafe-coerce (car l))) (cdr l))))
 
 (defn (top-map f l)
-  (forall (a b) (-> [(-> [a] b) Any] Any))
+  ((forall a b) (-> [(-> [a] b) Any] Any))
   (top-foldr (lambda (x ys)
                (: (cons (f x) ys) Any))
              ()
              l))
 
 (defn (top-append xs ys)
-  (forall (a b) (-> [a b] Any))
+  ((forall a b) (-> [a b] Any))
   (top-foldr (lambda (x a) (: (cons x a) Any))
              ys
              xs))
 
 (defn (compose f g)
-  (forall (a b c)
-          (-> [(-> [b] c) (-> [a] b)]
-              (-> [a] c)))
+  ((forall a b c)
+   (-> [(-> [b] c) (-> [a] b)]
+       (-> [a] c)))
   (lambda (x) (f (g x))))
-
-(defn (foralls xs e)
-  (-> [Any Any] Any)
-  (if (is-nil xs)
-      (: e Any)
-      ['forall xs e]))
 
 (defn (unsafe-gensyms xs)
   (-> [Any] Any)
   (top-map (lambda (_) (unsafe-gensym)) xs))
 
 (defn (const x)
-  (forall (a b) (-> [a] (-> [b] a)))
+  ((forall a b) (-> [a] (-> [b] a)))
   (lambda (_) x))
 
 (defn (constructor1 n c)
@@ -161,12 +155,12 @@
   (-> [Any Any Any] Any)
   (if (is-symbol c)
       (: ['def c
-               (foralls xs (cons n xs))
+               (-forall xs (cons n xs))
                ['unsafe-coerce ['quote c]]]
          Any)
       (let ((c' (cons (car c) (unsafe-gensyms (cdr c)))))
         ['defn c'
-          (foralls xs ['-> (cons 'tuple (cdr c)) (cons n xs)])
+          (-forall xs ['-> (cons 'tuple (cdr c)) (cons n xs)])
           ['unsafe-coerce (cons 'tuple (cons ['quote (car c')] (cdr c')))]])))
 
 (defn (cons-pred1 n c)
@@ -188,11 +182,11 @@
   (let ((g (unsafe-gensym)))
     (if (is-symbol c)
         (: ['defn [(symbol-concat 'is (unsafe-coerce c)) g]
-             (foralls xs ['-> ['tuple (cons n xs)] 'Bool])
+             (-forall xs ['-> ['tuple (cons n xs)] 'Bool])
              ['top-eq ['quote c] g]]
            Any)
         ['defn [(symbol-concat 'is (unsafe-coerce (car c))) g]
-          (foralls xs ['-> ['tuple (cons n xs)] 'Bool])
+          (-forall xs ['-> ['tuple (cons n xs)] 'Bool])
           ['if ['is-pair g]
                ['top-eq ['quote (car c)] ['car g]]
                'False]])))
@@ -215,7 +209,7 @@
      ['cdr (cadr s)]
      (cons
       ['defn [(car s) g]
-        (foralls xs ['-> ['tuple (cons n xs)] p])
+        (-forall xs ['-> ['tuple (cons n xs)] p])
         ['unsafe-coerce ['car (cadr s)]]]
       (caddr s))]))
 
@@ -271,7 +265,7 @@
       (: 'Type Any)
       (caddr x)))
 
-(defn (data' n xs cs)
+(defn (-data n xs cs)
   (-> [Any Any Any] Any)
   (let ((ps (top-map data-arg-name xs)))
     ['begin
@@ -287,16 +281,16 @@
      (macro d
        (if (is-symbol (car d))
            (data1 (car d) (cdr d))
-           (data' (caar d) (cdar d) (cdr d)))))
+           (-data (caar d) (cdar d) (cdr d)))))
 
 (defn (top-init xs)
-  (forall (a) (-> [a] Any))
+  ((forall a) (-> [a] Any))
   (if (is-nil (cdr xs))
       (: () Any)
       (cons (car xs) (top-init (cdr xs)))))
 
 (defn (top-last xs)
-  (forall (a) (-> [a] Any))
+  ((forall a) (-> [a] Any))
   (if (is-nil (cdr xs))
       (car xs)
       (top-last (cdr xs))))

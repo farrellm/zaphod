@@ -19,18 +19,18 @@
       (S Nat))
 
 (defn (id x)
-  (forall (a) (-> [a] a))
+  ((forall a) (-> [a] a))
   x)
 
-(defn (top-reverse' xs ys)
-  (forall (a b) (-> [a b] Any))
+(defn (-top-reverse xs ys)
+  ((forall a b) (-> [a b] Any))
   (if (is-nil xs)
       (: ys Any)
-      (top-reverse' (cdr xs) (cons (car xs) ys))))
+      (-top-reverse (cdr xs) (cons (car xs) ys))))
 
 (defn (top-reverse xs)
-  (forall (a) (-> [a] Any))
-  (top-reverse' xs ()))
+  ((forall a) (-> [a] Any))
+  (-top-reverse xs ()))
 
 (def top-concat
   (-> Any Any)
@@ -41,12 +41,12 @@
   (-> [Bool] Bool)
   (if p False True))
 
-(defn (and' x)
+(defn (-and x)
   (-> [Any] Any)
   (if (is-nil (cdr x))
       (car x)
       ['if (car x)
-           (and' (cdr x))
+           (-and (cdr x))
            'False]))
 
 (def and
@@ -54,44 +54,44 @@
      (macro x
        (if (is-nil x)
            (: 'True Any)
-           (and' x))))
+           (-and x))))
 
-(defn (or' x)
+(defn (-or x)
   (-> [Any] Any)
   (if (is-nil (cdr x))
       (car x)
       ['if (car x)
            'True
-           (or' (cdr x))]))
+           (-or (cdr x))]))
 
 (def or
      (-> Any Any)
      (macro x
        (if (is-nil x)
            (: 'False Any)
-           (or' x))))
+           (-or x))))
 
 (defn (unsafe-from-just m)
-  (forall (a) (-> [(Maybe a)] a))
+  ((forall a) (-> [(Maybe a)] a))
   (unsafe-coerce (cadr m)))
 
 (defn (maybe d f m)
-  (forall (a b) (-> [b (-> [a] b) (Maybe a)] b))
+  ((forall a b) (-> [b (-> [a] b) (Maybe a)] b))
   (if (top-eq m Nothing)
       d
       (f (unsafe-from-just m))))
 
 (defn (curry f x)
-  (forall (a b c) (-> [(-> (cons b a) c) b]
+  ((forall a b c) (-> [(-> (cons b a) c) b]
                       (-> a c)))
   (lambda y (apply f (cons x y))))
 
 (defn (unsafe-head l)
-  (forall (a) (-> [(List a)] a))
+  ((forall a) (-> [(List a)] a))
   (unsafe-coerce (cadr l)))
 
 (defn (unsafe-tail l)
-  (forall (a) (-> [(List a)] (List a)))
+  ((forall a) (-> [(List a)] (List a)))
   (unsafe-coerce (caddr l)))
 
 (defn (nat-prev i)
@@ -101,21 +101,21 @@
       (unsafe-coerce (cadr i))))
 
 (defn (unsafe-top-nth n l)
-  (forall (a) (-> [Nat Any] Any))
+  ((forall a) (-> [Nat Any] Any))
   (if (top-eq n Z)
       (car l)
       (unsafe-top-nth (nat-prev n) (cdr l))))
 
-(defn (top-map-index' f l i)
+(defn (-top-map-index f l i)
   (-> [(-> [Nat Any] Any) Any Nat] Any)
   (if (is-nil l)
       (: () Any)
       (cons (f i (car l))
-            (top-map-index' f (cdr l) (S i)))))
+            (-top-map-index f (cdr l) (S i)))))
 
 (defn (top-map-index f l)
   (-> [(-> [Nat Any] Any) Any] Any)
-  (top-map-index' f l Z))
+  (-top-map-index f l Z))
 
 (defn (top-zip xs ys)
   (-> [Any Any] Any)
@@ -124,7 +124,7 @@
       (cons (cons (car xs) (car ys))
             (top-zip (cdr xs) (cdr ys)))))
 
-(defn (apply-alist' f ns l)
+(defn (-apply-alist f ns l)
   (-> [Any Any Any] Any)
   ['apply f (cons 'tuple
                   (top-map (lambda (n)
@@ -133,15 +133,15 @@
 
 (defmacro (apply-alist f ns l)
   (-> [Any Any Any] Any)
-  (apply-alist' f ns l))
+  (-apply-alist f ns l))
 
-(defn (record' n ts c fs ks)
+(defn (-record n ts c fs ks)
   (-> [Symbol Any Symbol Any Any] Any)
   (let ((ps (top-map data-arg-name ts))
         (mk-field (lambda (i f)
-                    ['def (car f)
-                          ['forall ps ['-> ['cons (cons n ps) ()] (cadr f)]]
-                          ['lambda '(r) ['unsafe-coerce ['unsafe-top-nth i '(cdr r)]]]]))
+                    ['defn [(car f) 'r]
+                           [(cons 'forall ps) ['-> ['cons (cons n ps) ()] (cadr f)]]
+                           ['unsafe-coerce ['unsafe-top-nth i '(cdr r)]]]))
         (xs (top-map cadr fs))
         (g (symbol-concat '_ c ))
         (l (unsafe-gensym))
@@ -156,19 +156,19 @@
       (cons
        ['defmacro (cons c l)
          ['-> 'Any 'Any]
-         ['apply-alist' ['quote g] (cons 'tuple ks') l]]
+         ['-apply-alist ['quote g] (cons 'tuple ks') l]]
        (top-map-index mk-field fs))))))
 
 (def record
      (-> [(cons Symbol Any) (cons Symbol Any)] Any)
      (macro d
-       (record' (fst (fst d))
+       (-record (fst (fst d))
                 (snd (fst d))
                 (fst (fst (snd d)))
                 (snd (fst (snd d)))
                 ())))
 
-(defn (class' n ts fs)
+(defn (-class n ts fs)
   (-> [Symbol Any Any] Any)
   (let ((gs (unsafe-gensyms ts))
         (gm (top-zip (top-map car fs) gs))
@@ -176,7 +176,7 @@
     (cons
      'begin
      (cons
-      (record' n
+      (-record n
                ts
                (symbol-concat 'Mk n)
                (top-map (lambda (f)
@@ -190,9 +190,9 @@
          (let ((r (unsafe-gensym))
                (ps (unsafe-gensyms (cdadr f))))
            ['def (car f)
-                 ['forall ts'
+                 (-forall ts'
                           ['=> (cons n ts')
-                               (cadr f)]]
+                               (cadr f)])
                  ['implicit r ['lambda ps (cons [(alist-lookup (car f) gm) r]
                                                 ps)]]]))
        fs)))))
@@ -200,9 +200,9 @@
 (def class
      (-> (cons (cons Symbol Any) Any) Any)
      (macro d
-       (class' (fst (fst d)) (cdar d) (cdr d))))
+       (-class (fst (fst d)) (cdar d) (cdr d))))
 
-(defn (instance' n t fs)
+(defn (-instance n t fs)
   (-> [Symbol Any Any] Any)
   ['def
    (unsafe-gensym)
@@ -213,7 +213,7 @@
 (def instance
      (-> (cons [Symbol Any] Any) Any)
      (macro d
-       (instance' (fst (fst d))
+       (-instance (fst (fst d))
                   (fst (snd (fst d)))
                   (cdr d))))
 
