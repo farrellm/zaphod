@@ -60,8 +60,6 @@ baseEnvironment =
       ("Symbol", EType ZSymbol :$ ZType 0),
       ("Type", EType (ZType 0) :$ ZType 1),
       -- Native functions
-      ("zcons", ENative (Native (zcons . zUncurry2')) :$ zZCons),
-      --
       ("cons", ENative' (Native' (pure . cons . zUncurry2)) :$ zCons),
       ("fst", ENative' (Native' (fmap fst . getPair "fst")) :$ zFst),
       ("snd", ENative' (Native' (fmap snd . getPair "snd")) :$ zSnd),
@@ -84,7 +82,6 @@ baseEnvironment =
     zCons = ZForall a . ZForall b $ ZFunction (zTuple2 za zb) (ZPair za zb)
     zFst = ZForall a . ZForall b $ ZFunction (zTuple1 (ZPair za zb)) za
     zSnd = ZForall a . ZForall b $ ZFunction (zTuple1 (ZPair za zb)) zb
-    zZCons = ZForall a . ZForall b $ ZFunction (zTuple2 za zb) (ZType 0)
     zIf = ZForall a $ ZFunction (zTuple3 zBool za za) za
     zApply = ZForall a . ZForall b $ ZFunction (zTuple2 (ZFunction za zb) za) zb
     zUnsafeCoerce = ZForall a . ZForall b $ ZFunction (zTuple1 za) zb
@@ -96,10 +93,6 @@ baseEnvironment =
     zSymbolConcat = ZFunction (zTuple2 ZSymbol ZSymbol) ZSymbol
     zAnyEq = ZForall a . ZForall b $ ZFunction (zTuple2 za zb) zBool
     --
-    zcons (l, r) = do
-      tl <- getType "zcons" l
-      tr <- getType "zcons" r
-      pure (EType (ZPair tl tr) :$ ZType 0)
     cons (l@(_ :@ (ll, tl)), r@(_ :@ (lr, tr))) =
       EPair l r :@ (ll <> lr, ZPair tl tr)
     isNil (EUnit :$ _) = zTrue
@@ -116,10 +109,6 @@ baseEnvironment =
     stripEq (x, y) = toZBool (x == y)
     unsafeGensym = (:$ ZSymbol) <$> (ESymbol <$> gensym)
     promote x = EType (ZValue x) :$ ZType 0
-
-getType :: Text -> Typed' -> Either (NativeException ()) (ZType Typed')
-getType _ (EType z :$ _) = pure z
-getType n e = throwError $ TypeMismatch n e () "Type"
 
 getPair :: Text -> Typed l -> Either (NativeException ()) (Typed l, Typed l)
 getPair _ (EPair l r :@ _) = pure (l, r)
