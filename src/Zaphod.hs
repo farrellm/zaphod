@@ -72,7 +72,12 @@ printError err = do
       CannotApply t e l -> do
         printLocation l
         putTextLn ("Cannot apply type " <> render t <> " to value " <> render e)
-      _ -> print c
+      UndefinedVariable s l -> do
+        printLocation l
+        putTextLn ("Undefined variable: " <> render s)
+      CheckerEvaluatorExc e -> do
+        putTextLn "Evaluator exception in checker:"
+        printError e
     InvalidLambda r@(_ :# l) -> do
       printLocation l
       putTextLn ("Invalid lambda: " <> render r)

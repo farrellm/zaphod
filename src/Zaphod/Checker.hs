@@ -459,7 +459,7 @@ synthesize' (ESymbol a :# l) = do
   ctx <- use context
   case lookupVar (Variable a) ctx of
     Just t -> pure (ESymbol a :@ (l, t))
-    Nothing -> throwError $ UndefinedVariable (Variable a)
+    Nothing -> throwError $ UndefinedVariable (Variable a) l
 -- Anno
 synthesize' (EAnnotation e a :# l) = do
   a' <- synthesizeType a
