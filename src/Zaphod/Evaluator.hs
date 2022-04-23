@@ -102,6 +102,7 @@ evaluate = eval
     eval (EMacro1 v e _ :@ lt) = (:@ lt) <$> (EMacro1 v e <$> view environment)
     eval (EMacroN vs e _ :@ lt) = (:@ lt) <$> (EMacroN vs e <$> view environment)
     eval (EQuote z :@ _) = pure z
+    eval (EQuasiQuote q :@ _) = evalQQ q
     eval (EType t :@ l) = (:@ l) . EType <$> evaluateType t
     eval e = pure e
 
@@ -163,6 +164,14 @@ evaluate = eval
           ENativeIO (NativeIO g) :@ _ -> setLocation l <$> liftIO g
           _ -> debug (render f') $ bug Unreachable
 
+    evalQQ e@(EUnit :@ _) = pure e
+    evalQQ e@(ESymbol _ :@ _) = pure e
+    evalQQ (EPair (EUnquoteSplicing q :@ _) r :@ _) =
+      (<>) <$> eval q <*> evalQQ r
+    evalQQ (EPair l r :@ lt) = (:@ lt) <$> liftA2 EPair (evalQQ l) (evalQQ r)
+    evalQQ (EUnquote e :@ _) = eval e
+    evalQQ e = trace' (render e) $ bug Unreachable
+
     insertVar :: Environment a -> (Variable, a) -> Environment a
     insertVar env (Variable v, x) = insert v x env
 
@@ -180,6 +189,18 @@ analyzeQuoted :: Raw l -> Untyped l
 analyzeQuoted (RUnit :# l) = EUnit :# l
 analyzeQuoted (RSymbol s :# l) = ESymbol s :# l
 analyzeQuoted (RPair x y :# l) = EPair (analyzeQuoted x) (analyzeQuoted y) :# l
+
+analyzeQQuoted :: (MonadEvaluator l m) => Raw l -> m (Untyped l)
+analyzeQQuoted (RUnit :# l) = pure (EUnit :# l)
+analyzeQQuoted (RSymbol s :# l) = pure (ESymbol s :# l)
+analyzeQQuoted (RS "unquote" `RPair` (y :. RU) :# l) =
+  (:# l) . EUnquote <$> analyzeUntyped y
+analyzeQQuoted ((RS "unquote-splicing" `RPair` (y :. RU) :# lq) `RPair` r :# l) = do
+  y' <- (:# lq) . EUnquoteSplicing <$> analyzeUntyped y
+  r' <- analyzeQQuoted r
+  pure (EPair y' r' :# l)
+analyzeQQuoted (RPair x y :# l) =
+  (:# l) <$> (EPair <$> analyzeQQuoted x <*> analyzeQQuoted y)
 
 analyzeUntyped :: (MonadEvaluator l m) => Raw l -> m (Untyped l)
 analyzeUntyped (RUnit :# l) = pure (EUnit :# l)
@@ -204,6 +225,8 @@ analyzeUntyped (RS ":" `RPair` (e :. t :. RU) :# l) =
   (:# l) <$> (EAnnotation <$> analyzeUntyped e <*> analyzeType t)
 analyzeUntyped (RS "quote" `RPair` (x :. RU) :# l) =
   pure $ EQuote (analyzeQuoted x) :# l
+analyzeUntyped (RS "quasiquote" `RPair` (x :. RU) :# l) =
+  (:# l) <$> (EQuasiQuote <$> analyzeQQuoted x)
 analyzeUntyped (RS "forall" `RPair` (RS u :. z :. RU) :# l) =
   (\t -> EType (ZForall (Universal u) t) :# l) <$> analyzeType z
 analyzeUntyped (RS "->" `RPair` (a :. b :. RU) :# l) =
@@ -281,6 +304,7 @@ macroExpand1 w = do
   evaluatingStateT (emptyCheckerState env) $ go w
   where
     go a@(RS "quote" :. _) = pure a
+    go (q@(RS "quasiquote") `RPair` r :# l) = (:# l) . RPair q <$> qqExpand r
     go (RPair a@(RS s) b :# lq) = do
       let r' = RPair a (quoteList b) :# lq
       f <- view (environment . at s)
@@ -295,6 +319,11 @@ macroExpand1 w = do
 
     goInner (RPair x y :# l) = (:# l) <$> (RPair <$> go x <*> goInner y)
     goInner r = pure r
+
+    qqExpand (RPair u@(RS "unquote") b :# l) = (:# l) . RPair u <$> go b
+    qqExpand (RPair u@(RS "unquote-splicing") b :# l) = (:# l) . RPair u <$> go b
+    qqExpand (RPair a b :# l) = (:# l) <$> liftA2 RPair (qqExpand a) (qqExpand b)
+    qqExpand q = pure q
 
     quote e@(_ :# l) = rawTuple (RSymbol "quote" :# locBegin l :| [e])
 

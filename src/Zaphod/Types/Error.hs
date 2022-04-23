@@ -32,6 +32,7 @@ data CheckerException l
   | NotSubtype (ZType Typed') (ZType Typed') l
   | UndefinedVariable Variable l
   | ExistentialAlreadySolved (ZType Typed') Existential (ZType Typed')
+  | UnquoteOutsideQuasiquote Untyped' l
   | CheckerEvaluatorExc (EvaluatorException l)
   deriving (Functor)
 

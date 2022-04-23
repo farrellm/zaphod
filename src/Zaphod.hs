@@ -75,6 +75,9 @@ printError err = do
       UndefinedVariable s l -> do
         printLocation l
         putTextLn ("Undefined variable: " <> render s)
+      UnquoteOutsideQuasiquote e l -> do
+        printLocation l
+        putTextLn ("Unquote outside of quasiquote: " <> render e)
       CheckerEvaluatorExc e -> do
         putTextLn "Evaluator exception in checker:"
         printError e

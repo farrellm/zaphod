@@ -33,6 +33,7 @@ instance Eq (LocB Expr ZType l) where
 
 data ExprBug
   = EqUndefined
+  | MonoidUndefined Text Text
   deriving (Show)
 
 instance Exception ExprBug
@@ -90,6 +91,9 @@ data Expr f
   | ENative' Native'
   | ENativeIO NativeIO
   | ESpecial
+  | EQuasiQuote f
+  | EUnquote f
+  | EUnquoteSplicing f
   deriving (Show, Eq, Functor, Foldable, Traversable)
 
 type Untyped l = LocF Expr l
@@ -205,6 +209,24 @@ instance MaybeList (Typed l) where
   maybeList (EPair l r :@ _) = (l :) <$> maybeList r
   maybeList _ = Nothing
 
+instance Semigroup (ZType (Typed l)) where
+  ZUnit <> e = e
+  e <> ZUnit = e
+  ZPair a b <> e = ZPair a (b <> e)
+  a <> b = bug (MonoidUndefined (render a) (render b))
+
+instance (Semigroup l) => Semigroup (Untyped l) where
+  EUnit :# _ <> e = e
+  e <> EUnit :# _ = e
+  EPair a b :# l1 <> e@(_ :# l2) = EPair a (b <> e) :# (l1 <> l2)
+  a <> b = bug (MonoidUndefined (render a) (render b))
+
+instance (Semigroup l) => Semigroup (Typed l) where
+  EUnit :@ _ <> e = e
+  e <> EUnit :@ _ = e
+  EPair a b :@ l1 <> e@(_ :@ l2) = EPair a (b <> e) :@ (l1 <> l2)
+  a <> b = bug (MonoidUndefined (render a) (render b))
+
 instance Render Untyped' where
   render e@(LocU e') = go e'
     where
@@ -225,6 +247,9 @@ instance Render Untyped' where
       go (EApplyN f xs) =
         "(" <> T.intercalate " " (render f : toList (render <$> xs)) <> ")"
       go (EQuote t) = "'" <> render t
+      go (EQuasiQuote t) = "`" <> render t
+      go (EUnquote t) = "," <> render t
+      go (EUnquoteSplicing t) = ",@" <> render t
       go (ENative _) = "<native>"
       go (ENative' _) = "<native>"
       go (ENativeIO _) = "<nativeIO>"

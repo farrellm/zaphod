@@ -518,11 +518,38 @@ synthesize' (EQuote x :# lq) =
       let l' = synthesizeQuoted l
           r' = synthesizeQuoted r
        in EPair l' r' :@ (loc, ZPair (exprType l') (exprType r'))
-    synthesizeQuoted _ = bug Unreachable
+    synthesizeQuoted e = trace' (render e) $ bug Unreachable
 
     quotedType :: ZType (Untyped l) -> ZType (Typed l)
     quotedType (ZValue v) = ZValue $ synthesizeQuoted v
     quotedType t = bug (NotImplemented $ render t)
+synthesize' (EQuasiQuote x :# lx) = do
+  z <- synthesizeQQuoted x
+  pure (EQuasiQuote z :@ (lx, exprType z))
+  where
+    synthesizeQQuoted :: Untyped l -> m (Typed l)
+    synthesizeQQuoted (EType n :# loc) = (:@ (loc, ZType 0)) . EType <$> qquotedType n
+    synthesizeQQuoted (EUnit :# loc) = pure $ EUnit :@ (loc, ZUnit)
+    synthesizeQQuoted (ESymbol s :# loc) = pure $ ESymbol s :@ (loc, ZSymbol)
+    synthesizeQQuoted (EPair (EUnquoteSplicing q :# lq) r :# _) = do
+      q' <- synthesize q
+      r'@(_ :@ rlt) <- synthesizeQQuoted r
+      let ut = exprType q'
+          u = EUnquoteSplicing q' :@ (lq, ut)
+      pure (EPair u r' :@ ((lq, ut) <> rlt))
+    synthesizeQQuoted (EPair l r :# loc) = do
+      l' <- synthesizeQQuoted l
+      r' <- synthesizeQQuoted r
+      pure $ EPair l' r' :@ (loc, ZPair (exprType l') (exprType r'))
+    synthesizeQQuoted (EUnquote e :# l) = do
+      e' <- synthesize e
+      pure (EUnquote e' :@ (l, exprType e'))
+    synthesizeQQuoted e = trace' (render e) $ bug Unreachable
+
+    qquotedType (ZValue v) = ZValue <$> synthesizeQQuoted v
+    qquotedType t = bug (NotImplemented $ render t)
+synthesize' e@(EUnquote _ :# l) = throwError (UnquoteOutsideQuasiquote (project e) l)
+synthesize' e@(EUnquoteSplicing _ :# l) = throwError (UnquoteOutsideQuasiquote (project e) l)
 
 synthesizeFunction1 :: (MonadChecker l m) => Variable -> Untyped l -> m (Typed l, ZType (Typed l), ZType (Typed l))
 synthesizeFunction1 x e = do

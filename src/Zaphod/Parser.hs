@@ -90,26 +90,30 @@ tuple = do
   ts <- brackets $ many token
   pure (rawTuple ((RSymbol "tuple" :# Loc a a) :| ts))
 
-mkQuote :: Char -> Symbol -> Parser (Raw Loc)
+mkQuote :: Text -> Symbol -> Parser (Raw Loc)
 mkQuote c s = do
   a <- getSourcePos
-  t <- char c *> token
+  t <- symbol c *> token
   pure $ rawTuple ((RSymbol s :# Loc a a) :| [t])
 
 quote :: Parser (Raw Loc)
-quote = mkQuote '\'' "quote"
+quote = mkQuote "\'" "quote"
 
-backquote :: Parser (Raw Loc)
-backquote = mkQuote '`' "backquote"
+quasiquote :: Parser (Raw Loc)
+quasiquote = mkQuote "`" "quasiquote"
 
 unquote :: Parser (Raw Loc)
-unquote = mkQuote ',' "unquote"
+unquote = mkQuote "," "unquote"
+
+unquoteSplicing :: Parser (Raw Loc)
+unquoteSplicing = mkQuote ",@" "unquote-splicing"
 
 token :: Parser (Raw Loc)
 token =
   try unit
     <|> try quote
-    <|> try backquote
+    <|> try quasiquote
+    <|> try unquoteSplicing
     <|> try unquote
     <|> try symbol_
     <|> try pair
