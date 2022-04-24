@@ -233,11 +233,11 @@ instance Render Untyped' where
       go (EType z) = render z
       go EUnit = "()"
       go (ESymbol t) = render t
-      go (ELambda1 v x _) = "(\\" <> render v <> " " <> render x <> ")"
-      go (ELambdaN v x _) = "(\\" <> render v <> " " <> render x <> ")"
-      go (EImplicit v x) = "(implicit " <> render v <> " " <> render x <> ")"
-      go (EMacro1 v x _) = "(macro " <> render v <> " " <> render x <> ")"
-      go (EMacroN vs x _) = "(macro " <> render vs <> " " <> render x <> ")"
+      go ELambda1 {} = "<lambda>"
+      go ELambdaN {} = "<lambda>"
+      go EImplicit {} = "<implicit>"
+      go EMacro1 {} = "<macro>"
+      go EMacroN {} = "<macro>"
       go (EPair l r) =
         case maybeList e of
           Just xs -> render xs
