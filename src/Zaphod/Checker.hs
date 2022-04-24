@@ -1,8 +1,15 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TupleSections #-}
 
-module Zaphod.Checker (check, synthesize, subtype) where
+module Zaphod.Checker
+  ( check,
+    synthesize,
+    subtype,
+    isSubtype,
+  )
+where
 
+import Control.Monad.Except (catchError)
 import qualified Data.Text as T
 import Lens.Micro.Platform (use, (%=), (+=), (-=), (.=), (<<%=))
 import Zaphod.Context
@@ -603,3 +610,9 @@ applySynth' (ZImplicit a c) e = do
   pure (ZImplicit a' f', e', c')
 --
 applySynth' t e@(_ :# l) = throwError $ CannotApply (project t) (project e) l
+
+isSubtype :: (MonadChecker l m) => ZType (Typed l) -> ZType (Typed l) -> m Bool
+isSubtype a b = do
+  catchError (subtype a b >> pure True) $ \case
+    NotSubtype {} -> pure False
+    err -> throwError err

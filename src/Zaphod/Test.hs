@@ -137,7 +137,7 @@ test = do
         )
     synthesized a =
       withZaphod
-        ( liftChecker synthesize
+        ( liftChecker [] . synthesize
             =<< analyzeUntyped
             =<< macroExpand . fmap Just
             =<< parseTest a
@@ -145,7 +145,7 @@ test = do
     evaluated a =
       withZaphod
         ( evaluate
-            =<< liftChecker synthesize
+            =<< liftChecker [] . synthesize
             =<< analyzeUntyped
             =<< macroExpand . fmap Just
             =<< parseTest a

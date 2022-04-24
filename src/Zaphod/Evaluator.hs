@@ -13,10 +13,10 @@ where
 import Control.Monad.Except (liftEither)
 import qualified Data.Map as M
 import qualified Data.Set as S
-import Lens.Micro.Platform (at, view, (%=), (%~), (.~), (?=), (?~))
+import Lens.Micro.Platform (at, to, view, (%=), (%~), (.~), (?=), (?~))
 import Relude.Extra.Map (elems, insert)
 import Zaphod.Base (zTrue)
-import Zaphod.Checker (check, subtype, synthesize)
+import Zaphod.Checker (check, isSubtype, synthesize)
 import Zaphod.Context ((<:))
 import Zaphod.Types
 
@@ -25,12 +25,16 @@ unwrapType ((EType z) :@ _) = z
 unwrapType _ = bug Unreachable
 
 liftChecker ::
-  (MonadError (EvaluatorException l) m) =>
-  (a -> ExceptT (CheckerException l) m b) ->
-  a ->
+  (MonadEvaluator l m) =>
+  [(Symbol, ZType (Typed l))] ->
+  ExceptT (CheckerException l) (StateT (CheckerState l) m) b ->
   m b
-liftChecker f x = do
-  e <- runExceptT $ f x
+liftChecker bs x = do
+  env <- view environment
+  e <- evaluatingStateT (emptyCheckerState env) $ do
+    for_ bs $ \(n, t) ->
+      context %= (CVariable (Variable n) t <:)
+    runExceptT x
   case e of
     Right res -> pure res
     Left err -> throwError (CheckerException err)
@@ -40,21 +44,12 @@ liftNative l = liftEither . first (NativeException . fmap (const l))
 
 findOfType :: (MonadEvaluator l m) => l -> ZType (Typed l) -> m (Typed l)
 findOfType l z = do
-  env <- view environment
-  let ctx = emptyCheckerState env
-      vs = elems env
-  xs <- mapError CheckerException $ filterM (isSubtype ctx z . exprType) vs
+  vs <- view (environment . to elems)
+  xs <- liftChecker [] $ filterM (isSubtype z . exprType) vs
   case xs of
     [x] -> pure x
     [] -> throwError (NoMatches (project z) l)
     _ -> throwError (MultipleMatches (project z) (project <$> xs) l)
-  where
-    isSubtype ctx a b = do
-      e <- runExceptT (evaluatingStateT ctx $ subtype a b)
-      case e of
-        Right () -> pure True
-        Left NotSubtype {} -> pure False
-        Left err -> throwError err
 
 infer :: (MonadEvaluator l m) => Typed l -> m (Typed l)
 infer (EApplyN f@(_ :@ (l, ZImplicit a b)) xs :@ lt) = do
@@ -168,7 +163,7 @@ evaluate = eval
     evalQQ e@(ESymbol _ :@ _) = pure e
     evalQQ (EPair (EUnquoteSplicing q :@ _) r :@ _) =
       (<>) <$> eval q <*> evalQQ r
-    evalQQ (EPair l r :@ lt) = (:@ lt) <$> liftA2 EPair (evalQQ l) (evalQQ r)
+    evalQQ (EPair l r :@ lt) = (:@ lt) <$> (EPair <$> evalQQ l <*> evalQQ r)
     evalQQ (EUnquote e :@ _) = eval e
     evalQQ e = trace' (render e) $ bug Unreachable
 
@@ -251,16 +246,17 @@ maybeSymbol _ = Nothing
 
 evaluateRaw :: (MonadEvaluator l m) => Maybe (Symbol, Raw l) -> Raw l -> m (Typed l)
 evaluateRaw m x = do
-  env <- view environment
-  x' <- evaluatingStateT (emptyCheckerState env) $
-    case m of
-      Just (n, t) -> do
-        t' <- evaluate =<< liftChecker (`check` ZAnyType) =<< analyzeUntyped t
-        let t'' = unwrapType t'
-        context %= (CVariable (Variable n) t'' <:)
-        r <- evaluate =<< infer =<< liftChecker (`check` t'') =<< analyzeUntyped x
-        pure $ setType t'' r
-      Nothing -> evaluate =<< infer =<< liftChecker synthesize =<< analyzeUntyped x
+  x' <- case m of
+    Just (n, t) -> do
+      ut <- analyzeUntyped t
+      wt <- evaluate =<< liftChecker [] (ut `check` ZAnyType)
+      let t' = unwrapType wt
+      ur <- analyzeUntyped x
+      r <- evaluate =<< infer =<< liftChecker [(n, t')] (ur `check` t')
+      pure $ setType t' r
+    Nothing -> do
+      ux <- analyzeUntyped x
+      evaluate =<< infer =<< liftChecker [] (synthesize ux)
   pure (omap universalize x')
   where
     universalize z =
@@ -299,9 +295,7 @@ evaluateRaw m x = do
     replaceExt _ z = z
 
 macroExpand1 :: (MonadEvaluator l m) => Raw l -> m (Raw l)
-macroExpand1 w = do
-  env <- view environment
-  evaluatingStateT (emptyCheckerState env) $ go w
+macroExpand1 = go
   where
     go a@(RS "quote" :. _) = pure a
     go (q@(RS "quasiquote") `RPair` r :# l) = (:# l) . RPair q <$> qqExpand r
@@ -309,10 +303,14 @@ macroExpand1 w = do
       let r' = RPair a (quoteList b) :# lq
       f <- view (environment . at s)
       case f of
-        Just (EMacro1 {} :@ _) ->
-          toRaw <$> (evaluate =<< liftChecker synthesize =<< analyzeUntyped r')
-        Just (EMacroN {} :@ (_, ZFunction _ _)) ->
-          toRaw <$> (evaluate =<< liftChecker synthesize =<< analyzeUntyped r')
+        Just (EMacro1 {} :@ _) -> do
+          u <- analyzeUntyped r'
+          t <- evaluate =<< liftChecker [] (synthesize u)
+          pure $ toRaw t
+        Just (EMacroN {} :@ (_, ZFunction _ _)) -> do
+          u <- analyzeUntyped r'
+          t <- evaluate =<< liftChecker [] (synthesize u)
+          pure $ toRaw t
         _ -> (:# lq) . RPair a <$> goInner b
     go (RPair x y :# l) = (:# l) <$> (RPair <$> go x <*> goInner y)
     go r = pure r
@@ -322,7 +320,7 @@ macroExpand1 w = do
 
     qqExpand (RPair u@(RS "unquote") b :# l) = (:# l) . RPair u <$> go b
     qqExpand (RPair u@(RS "unquote-splicing") b :# l) = (:# l) . RPair u <$> go b
-    qqExpand (RPair a b :# l) = (:# l) <$> liftA2 RPair (qqExpand a) (qqExpand b)
+    qqExpand (RPair a b :# l) = (:# l) <$> (RPair <$> qqExpand a <*> qqExpand b)
     qqExpand q = pure q
 
     quote e@(_ :# l) = rawTuple (RSymbol "quote" :# locBegin l :| [e])
