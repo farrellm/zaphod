@@ -71,10 +71,10 @@ evaluate :: forall l m. (MonadEvaluator l m) => Typed l -> m (Typed l)
 evaluate = eval
   where
     eval :: Typed l -> m (Typed l)
-    eval (ESymbol s :@ (_, z)) = do
+    eval (ESymbol s :@ (_, _)) = do
       m <- view (environment . at s)
       case m of
-        Just v -> pure $ setType z v
+        Just v -> pure v
         _ -> bug Unreachable
     eval (EAnnotation v z :@ _) = setType z <$> eval v
     eval (EApplyN o xs :@ lt)

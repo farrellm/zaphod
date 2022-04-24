@@ -106,7 +106,7 @@ baseEnvironment =
       pure (ESymbol s :$ ZSymbol)
     toZBool True = zTrue
     toZBool False = zFalse
-    stripEq (x, y) = toZBool (x == y)
+    stripEq (x, y) = toZBool ((project x :: Untyped') == (project y :: Untyped'))
     unsafeGensym = (:$ ZSymbol) <$> (ESymbol <$> gensym)
     promote x = EType (ZValue x) :$ ZType 0
 
