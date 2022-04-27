@@ -1,7 +1,7 @@
 module Zaphod.Types.Error where
 
 import Control.Monad.Except (MonadError (catchError))
-import Zaphod.Types.Expr (NativeException, Typed', Untyped', ZType)
+import Zaphod.Types.Expr (NativeException, Typed, Typed', Untyped, Untyped', ZType)
 import Zaphod.Types.Raw (Raw)
 import Zaphod.Types.Wrapper (Existential, Variable)
 
@@ -23,6 +23,8 @@ data EvaluatorException l
   | CheckerException (CheckerException l)
   | InvalidLambda (Raw l)
   | InvalidMacro (Raw l)
+  | InvalidCase (Raw l)
+  | PatternMatchingFailure (Typed l) l
   | CallSite l (EvaluatorException l)
   deriving (Functor)
 
@@ -34,6 +36,7 @@ data CheckerException l
   | ExistentialAlreadySolved (ZType Typed') Existential (ZType Typed')
   | UnquoteOutsideQuasiquote Untyped' l
   | CheckerEvaluatorExc (EvaluatorException l)
+  | InvalidCasePattern (Untyped l)
   deriving (Functor)
 
 mapError :: (MonadError a m) => (b -> a) -> ExceptT b m c -> m c

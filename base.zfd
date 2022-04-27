@@ -9,8 +9,9 @@
 (def -tuple
      (-> (cons Any ()) Any)
      (lambda (t)
-       (if (is-nil t) (: () Any)
-           `(cons ,(car t) ,(-tuple (cdr t))))))
+       (case t
+         (() ())
+         ((a . b) `(cons ,a ,(-tuple b))))))
 
 (def tuple
      (-> Any Any)
@@ -33,9 +34,10 @@
 (def top-foldr
      (forall a (forall b (-> [(-> [b a] a) a Any] a)))
      (lambda (f i l)
-       (if (is-nil l) i
-           (f (unsafe-coerce (car l))
-              (top-foldr f i (cdr l))))))
+       (case l
+         (() i)
+         ((a . b) (f (unsafe-coerce a)
+                     (top-foldr f i b))))))
 
 (def alist-lookup
      (-> [Any Any] Any)
@@ -47,11 +49,11 @@
 (def alist-lookup'
      (-> [Any Any Any] Any)
      (lambda (k d l)
-       (if (is-nil l)
-           (: d Any)
-           (if (top-eq k (caar l))
-               (cdar l)
-               (alist-lookup' k d (cdr l))))))
+       (case l
+         (() d)
+         (((k' . v) . xs) (if (top-eq k k')
+                              v
+                              (alist-lookup' k d xs))))))
 
 (def mk-forall
      (-> [Symbol Any] Any)
@@ -105,19 +107,20 @@
        `(def ,(car p) ,t (macro ,(cdr p) ,e))))
 
 (defn (top-foldl f i l)
-  ((forall a b) (-> [(-> [a b] a) a Any] a))
-  (if (is-nil l) i
-      (top-foldl f (f i (unsafe-coerce (car l))) (cdr l))))
+  ((forall a) (-> [(-> [a Any] a) a Any] a))
+  (case l
+    (() i)
+    ((x . xs) (top-foldl f (f i x) xs))))
 
 (defn (top-map f l)
-  ((forall a b) (-> [(-> [a] b) Any] Any))
+  (-> [(-> [Any] Any) Any] Any)
   (top-foldr (lambda (x ys)
                (: (cons (f x) ys) Any))
              ()
              l))
 
 (defn (top-append xs ys)
-  ((forall a b) (-> [a b] Any))
+  (-> [Any Any] Any)
   (top-foldr (lambda (x a) (: (cons x a) Any))
              ys
              xs))
@@ -196,13 +199,13 @@
       (-data (caar d) (cdar d) (cdr d))))
 
 (defn (top-init xs)
-  ((forall a) (-> [a] Any))
-  (if (is-nil (cdr xs))
-      (: () Any)
-      (cons (car xs) (top-init (cdr xs)))))
+  (-> [Any] Any)
+  (case xs
+    ((x) (: () Any))
+    ((x . xs) `(,x ,@(top-init xs)))))
 
 (defn (top-last xs)
-  ((forall a) (-> [a] Any))
+  (-> [Any] Any)
   (if (is-nil (cdr xs))
       (car xs)
       (top-last (cdr xs))))

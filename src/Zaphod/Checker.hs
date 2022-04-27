@@ -510,6 +510,42 @@ synthesize' (EPair l r :# loc) = do
   l' <- synthesize l
   r' <- synthesize r
   pure (EPair l' r' :@ (loc, ZPair (exprType l') (exprType r')))
+synthesize' (ECase x (c :| cs) :# loc) = do
+  x' <- synthesize x
+  if exprType x' == ZAny
+    then do
+      r0@(_, v0) <- synthCase ZAny ZAny c
+      rs <- traverse (synthCase ZAny ZAny) cs
+      applyCtxExpr (ECase x' (r0 :| rs) :@ (loc, exprType v0))
+    else do
+      gammaHat <- ZExistential <$> nextExtential
+      betaHat <- ZExistential <$> nextExtential
+      r0@(_, v0) <- synthCase gammaHat betaHat c
+      rs <- traverse (synthCase gammaHat betaHat) cs
+      x'' <- x `check` gammaHat
+      applyCtxExpr (ECase x'' (r0 :| rs) :@ (loc, exprType v0))
+  where
+    synthCase gammaHat betaHat (a, b) = do
+      vs <- findVars a
+      alphaHats <- forM vs $ \v -> do
+        alphaHat <- ZExistential <$> nextExtential
+        pure (v, alphaHat)
+      for_ alphaHats $ \(v, alphaHat) ->
+        context %= (CVariable v alphaHat <:)
+      a' <- a `check` gammaHat
+      b' <- b `check` betaHat
+      for_ (reverse vs) $ \v ->
+        context %= dropVar v
+      pure (a', b')
+
+    findVars (EUnit :# _) = pure []
+    findVars (ESymbol s :# _)
+      | isConstructor s = pure []
+      | otherwise = pure [Variable s]
+    findVars (EPair l r :# _) = (++) <$> findVars l <*> findVars r
+    findVars (EApply1 f y :# _) = (++) <$> findVars f <*> findVars y
+    findVars (EApplyN f ys :# _) = (++) <$> findVars f <*> (concat <$> traverse findVars ys)
+    findVars p = traceM' (show (project p :: Untyped')) >> throwError (InvalidCasePattern p)
 -- Type
 synthesize' (EType m :# l) = (:@ (l, ZType 0)) . EType <$> synthesizeType m
 -- Quote

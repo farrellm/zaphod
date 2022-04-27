@@ -78,6 +78,9 @@ printError err = do
       UnquoteOutsideQuasiquote e l -> do
         printLocation l
         putTextLn ("Unquote outside of quasiquote: " <> render e)
+      InvalidCasePattern p@(_ :# l) -> do
+        printLocation l
+        putTextLn ("Invalid case pattern: " <> render p)
       CheckerEvaluatorExc e -> do
         putTextLn "Evaluator exception in checker:"
         printError e
@@ -87,6 +90,12 @@ printError err = do
     InvalidMacro r@(_ :# l) -> do
       printLocation l
       putTextLn ("Invalid macro: " <> render r)
+    InvalidCase (_ :# l) -> do
+      printLocation l
+      putTextLn "Invalid case"
+    PatternMatchingFailure v l -> do
+      printLocation l
+      putTextLn ("No matching pattern for value: " <> render v)
   where
     printLocation (Just (Loc b _)) = putStrLn (sourcePosPretty b <> ": error:")
     printLocation Nothing = pass

@@ -96,6 +96,7 @@ evaluate = eval
     eval (ELambdaN vs e _ :@ lt) = (:@ lt) <$> (ELambdaN vs e <$> view environment)
     eval (EMacro1 v e _ :@ lt) = (:@ lt) <$> (EMacro1 v e <$> view environment)
     eval (EMacroN vs e _ :@ lt) = (:@ lt) <$> (EMacroN vs e <$> view environment)
+    eval (ECase x (p :| ps) :@ (l, t)) = evalCase (p : ps) l t =<< eval x
     eval (EQuote z :@ _) = pure z
     eval (EQuasiQuote q :@ _) = evalQQ q
     eval (EType t :@ l) = (:@ l) . EType <$> evaluateType t
@@ -159,10 +160,31 @@ evaluate = eval
           ENativeIO (NativeIO g) :@ _ -> setLocation l <$> liftIO g
           _ -> debug (render f') $ bug Unreachable
 
+    evalCase ((p, e) : ps) l t x
+      | Just bs <- bindings x p = local (environment %~ flip (foldl' insertVar) bs) $ eval e
+      | otherwise = evalCase ps l t x
+    evalCase [] l _ x = traceM' (show (project x :: Typed')) >> throwError (PatternMatchingFailure x l)
+
+    bindings (EUnit :@ _) (EUnit :@ _) = Just []
+    bindings (ESymbol l :@ _) (ESymbol r :@ _)
+      | isConstructor r && l == r = Just []
+    bindings x (ESymbol r :@ _)
+      | not (isConstructor r) = Just [(Variable r, x)]
+    bindings (EPair l r :@ _) (EApply1 f x :@ _) = (++) <$> bindings l f <*> bindings r x
+    bindings (EPair l1 r1 :@ _) (EApplyN f xs :@ _)
+      | Just rs <- maybeList r1 =
+        (++) <$> bindings l1 f <*> (concat <$> zipWithStrict bindings rs xs)
+    bindings _ _ = Nothing
+
+    zipWithStrict :: (a -> b -> Maybe c) -> [a] -> [b] -> Maybe [c]
+    zipWithStrict _ [] [] = Just []
+    zipWithStrict f (x : xs) (y : ys) =
+      (:) <$> f x y <*> zipWithStrict f xs ys
+    zipWithStrict _ _ _ = Nothing
+
     evalQQ e@(EUnit :@ _) = pure e
     evalQQ e@(ESymbol _ :@ _) = pure e
-    evalQQ (EPair (EUnquoteSplicing q :@ _) r :@ _) =
-      (<>) <$> eval q <*> evalQQ r
+    evalQQ (EPair (EUnquoteSplicing q :@ _) r :@ _) = (<>) <$> eval q <*> evalQQ r
     evalQQ (EPair l r :@ lt) = (:@ lt) <$> (EPair <$> evalQQ l <*> evalQQ r)
     evalQQ (EUnquote e :@ _) = eval e
     evalQQ e = trace' (render e) $ bug Unreachable
@@ -216,6 +238,16 @@ analyzeUntyped (RS "macro" `RPair` (mxs :. e :. RU) :# l)
     Just vs <- traverse maybeSymbol xs =
     (:# l) <$> (EMacroN (Variable <$> vs) <$> analyzeUntyped e <*> pure mempty)
 analyzeUntyped r@(RS "macro" `RPair` _ :# _) = throwError (InvalidMacro r)
+analyzeUntyped r@(RS "case" `RPair` (x :. rs) :# l)
+  | Just cs <- nonEmpty =<< maybeList rs = do
+    mcs' <- traverse analyzeCase cs
+    case sequence mcs' of
+      Just cs' -> (:# l) <$> (ECase <$> analyzeUntyped x <*> pure cs')
+      Nothing -> throwError (InvalidCase r)
+  where
+    analyzeCase (p :. v :. RU) = Just <$> ((,) <$> analyzeUntyped p <*> analyzeUntyped v)
+    analyzeCase _ = pure Nothing
+analyzeUntyped r@(RS "case" :. _) = throwError (InvalidCase r)
 analyzeUntyped (RS ":" `RPair` (e :. t :. RU) :# l) =
   (:# l) <$> (EAnnotation <$> analyzeUntyped e <*> analyzeType t)
 analyzeUntyped (RS "quote" `RPair` (x :. RU) :# l) =

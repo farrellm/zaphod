@@ -3,6 +3,7 @@
 
 module Zaphod.Types.Expr where
 
+import Data.Char (isUpper)
 import qualified Data.Text as T
 import qualified GHC.Exts as GE
 import qualified GHC.Show (Show (..))
@@ -11,7 +12,7 @@ import Lens.Micro.Platform ()
 import Relude.Extra.Map (DynamicMap (..), StaticMap (..))
 import Zaphod.Types.Class (Location (..), Magma (..), MaybeList (..), Projection (project), Render (..))
 import Zaphod.Types.Location (LocA (..), LocB (..), LocF (..), LocU (..))
-import Zaphod.Types.Wrapper (Existential, Symbol, Universal, Variable)
+import Zaphod.Types.Wrapper (Existential, Symbol (..), Universal, Variable)
 
 deriving instance Show (LocU Expr)
 
@@ -85,6 +86,7 @@ data Expr f
   | EApply1 f f
   | EApplyN f [f]
   | EPair f f
+  | ECase f (NonEmpty (f, f))
   | EAnnotation f (ZType f)
   | EQuote f
   | ENative Native
@@ -242,6 +244,7 @@ instance Render Untyped' where
         case maybeList e of
           Just xs -> render xs
           Nothing -> render (l, r)
+      go ECase {} = "<case>"
       go (EAnnotation x z) = "(" <> render x <> " : " <> render z <> ")"
       go (EApply1 f x) = go (EPair f x)
       go (EApplyN f xs) =
@@ -282,3 +285,6 @@ typedTuple :: (Location l, Monoid l) => [Typed l] -> Typed l
 typedTuple [] = EUnit :@ (mempty, ZUnit)
 typedTuple [x@(_ :@ (l, _))] = x >< (EUnit :@ (locEnd l, ZUnit))
 typedTuple (x : xs) = x >< typedTuple xs
+
+isConstructor :: Symbol -> Bool
+isConstructor (Symbol s) = isUpper $ T.head s
