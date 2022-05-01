@@ -40,7 +40,7 @@ data ExprBug
 instance Exception ExprBug
 
 data NativeException l
-  = TypeMismatch Text Typed' l Text
+  = TypeMismatch Text Untyped' l Text
   deriving (Show, Functor)
 
 newtype Environment e = Environment {getEnvironment :: Map Symbol e}
@@ -160,7 +160,7 @@ instance Render (ZType Typed') where
 instance Render (ZType (Typed l)) where
   render t = render (project t :: ZType Untyped')
 
-newtype Native = Native (Typed' -> Either (NativeException ()) Typed')
+newtype Native = Native (Untyped' -> Either (NativeException ()) Untyped')
 
 instance Eq Native where
   _ == _ = bug EqUndefined
@@ -168,7 +168,7 @@ instance Eq Native where
 instance Show Native where
   show _ = "Native <native>"
 
-newtype Native' = Native' (forall l. (Location l) => Typed l -> Either (NativeException ()) (Typed l))
+newtype Native' = Native' (forall l. (Location l) => Untyped l -> Either (NativeException ()) (Untyped l))
 
 instance Eq Native' where
   _ == _ = bug EqUndefined
@@ -176,7 +176,7 @@ instance Eq Native' where
 instance Show Native' where
   show _ = "Native' <native>"
 
-newtype NativeIO = NativeIO (IO Typed')
+newtype NativeIO = NativeIO (IO Untyped')
 
 instance Eq NativeIO where
   _ == _ = bug EqUndefined
@@ -200,6 +200,15 @@ instance MaybeList Untyped' where
 
   maybeList (LocU EUnit) = Just []
   maybeList (LocU (EPair l r)) = (l :) <$> maybeList r
+  maybeList _ = Nothing
+
+instance MaybeList (Untyped l) where
+  isList (EUnit :# _) = True
+  isList (EPair _ r :# _) = isList r
+  isList _ = False
+
+  maybeList (EUnit :# _) = Just []
+  maybeList (EPair l r :# _) = (l :) <$> maybeList r
   maybeList _ = Nothing
 
 instance MaybeList (Typed l) where

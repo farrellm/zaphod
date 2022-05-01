@@ -1,7 +1,7 @@
 module Zaphod.Types.Error where
 
 import Control.Monad.Except (MonadError (catchError))
-import Zaphod.Types.Expr (NativeException, Typed, Typed', Untyped, Untyped', ZType)
+import Zaphod.Types.Expr (NativeException, Typed, Untyped, ZType)
 import Zaphod.Types.Raw (Raw)
 import Zaphod.Types.Wrapper (Existential, Variable)
 
@@ -14,8 +14,8 @@ data ZaphodBug
 instance Exception ZaphodBug
 
 data EvaluatorException l
-  = NoMatches (ZType Typed') l
-  | MultipleMatches (ZType Typed') [Typed'] l
+  = NoMatches (ZType (Typed l)) l
+  | MultipleMatches (ZType (Typed l)) [ZType (Typed l)] l
   | InvalidParameters (Raw l)
   | NotList (Raw l)
   | BadBegin (Raw l)
@@ -24,17 +24,17 @@ data EvaluatorException l
   | InvalidLambda (Raw l)
   | InvalidMacro (Raw l)
   | InvalidCase (Raw l)
-  | PatternMatchingFailure (Typed l) l
+  | PatternMatchingFailure (Untyped l) l
   | CallSite l (EvaluatorException l)
   deriving (Functor)
 
 data CheckerException l
-  = CannotApply (ZType Typed') Untyped' l
-  | TypeError (ZType Typed') (ZType Typed') l
-  | NotSubtype (ZType Typed') (ZType Typed') l
+  = CannotApply (ZType (Typed l)) (Untyped l) l
+  | TypeError (ZType (Typed l)) (ZType (Typed l)) l
+  | NotSubtype (ZType (Typed l)) (ZType (Typed l)) l
   | UndefinedVariable Variable l
-  | ExistentialAlreadySolved (ZType Typed') Existential (ZType Typed')
-  | UnquoteOutsideQuasiquote Untyped' l
+  | ExistentialAlreadySolved (ZType (Typed l)) Existential (ZType (Typed l))
+  | UnquoteOutsideQuasiquote (Untyped l) l
   | CheckerEvaluatorExc (EvaluatorException l)
   | InvalidCasePattern (Untyped l)
   deriving (Functor)

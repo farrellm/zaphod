@@ -31,8 +31,8 @@ instance Location Loc where
   locBegin (Loc a _) = Loc a a
   locEnd (Loc _ b) = Loc b b
 
-setLocation :: (Functor f, Functor z) => l -> LocA f z -> LocB f z l
-setLocation l (x :$ t) = (setLocation l <$> x) :@ (l, setLocation l <$> t)
+setLocation :: (Functor f) => l -> LocU f -> LocF f l
+setLocation l (LocU x) = (setLocation l <$> x) :# l
 
 instance (Functor f) => Projection (LocF f l) (LocU f) where
   project (x :# _) = LocU (project <$> x)
@@ -45,6 +45,9 @@ instance (Functor f, Functor z) => Projection (LocB f z l) (LocA f z) where
 
 instance (Functor f, Functor z) => Projection (LocB f z l) (LocU f) where
   project = project @(LocA f z) . project
+
+instance (Functor f, Monoid l) => Injection (LocU f) (LocF f l) where
+  embed (LocU x) = (embed <$> x) :# mempty
 
 instance (Functor f, Functor z, Monoid l) => Injection (LocA f z) (LocB f z l) where
   embed (x :$ z) = (embed <$> x) :@ (mempty, embed <$> z)

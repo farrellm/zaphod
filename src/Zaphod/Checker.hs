@@ -6,6 +6,7 @@ module Zaphod.Checker
     synthesize,
     subtype,
     isSubtype,
+    retype,
   )
 where
 
@@ -13,7 +14,7 @@ import Control.Monad.Except (catchError)
 import qualified Data.Text as T
 import Lens.Micro.Platform (use, (%=), (+=), (-=), (.=), (<<%=))
 import Zaphod.Context
-import {-# SOURCE #-} Zaphod.Evaluator (evaluateType)
+import {-# SOURCE #-} Zaphod.Evaluator (evaluateType, infer)
 import Zaphod.Types
 
 bind2 :: (Monad m) => (a -> b -> m c) -> m a -> m b -> m c
@@ -142,6 +143,32 @@ existentializeValue (EPair a b :@ lt) = do
   pure (EPair a' b' :@ lt, aHat ++ bHat)
 existentializeValue e = bug $ NotImplemented (render e)
 
+retype :: ZType (Untyped l) -> ZType (Typed l)
+retype (ZType n) = ZType n
+retype ZAny = ZAny
+retype ZAnyType = ZAnyType
+retype ZUnit = ZUnit
+retype ZSymbol = ZSymbol
+retype (ZFunction x y) = ZFunction (retype x) (retype y)
+retype (ZImplicit x y) = ZImplicit (retype x) (retype y)
+retype (ZPair x y) = ZPair (retype x) (retype y)
+retype (ZForall u x) = ZForall u (retype x)
+retype (ZUniversal u) = ZUniversal u
+retype (ZExistential e) = ZExistential e
+retype (ZValue v) = ZValue $ retypeValue v
+  where
+    retypeValue (EUnit :# l) = EUnit :@ (l, ZUnit)
+    retypeValue (ESymbol s :# l) = ESymbol s :@ (l, ZSymbol)
+    retypeValue (EPair a b :# l) =
+      let a'@(_ :@ (_, ta)) = retypeValue a
+          b'@(_ :@ (_, tb)) = retypeValue b
+       in EPair a' b' :@ (l, ZPair ta tb)
+    retypeValue (EType (ZType n) :# l) =
+      EType (ZType n) :@ (l, ZType (n + 1))
+    retypeValue (EType ZAnyType :# _) = bug Unreachable
+    retypeValue (EType t :# l) = EType (retype t) :@ (l, ZType 0)
+    retypeValue x = bug $ NotImplemented ("retypeValue: " <> render x)
+
 subtype :: (MonadChecker l m) => ZType (Typed l) -> ZType (Typed l) -> m ()
 subtype a b =
   logInfo ("sub " <> render a <> " <: " <> render b) $
@@ -201,7 +228,7 @@ logInfo m x = do
 
 subtype' :: (MonadChecker l m) => ZType (Typed l) -> ZType (Typed l) -> m ()
 -- <:Any
-subtype' a@(ZType _) ZAny = throwError $ NotSubtype (project a) ZAny mempty
+subtype' a@(ZType _) ZAny = throwError $ NotSubtype a ZAny mempty
 subtype' ZAnyType ZAny = throwError $ NotSubtype ZAnyType ZAny mempty
 subtype' _ ZAny = pass
 subtype' (ZType _) ZAnyType = pass
@@ -245,9 +272,9 @@ subtype' (ZValue x) (ZValue y) = x `exprSubtype` y
       al `exprSubtype` bl
       ar `exprSubtype` br
     exprSubtype (EType a :@ _) (EType b :@ _) = a `subtype` b
-    exprSubtype a b = throwError $ NotSubtype (project $ ZValue a) (project $ ZValue b) mempty
+    exprSubtype a b = throwError $ NotSubtype (ZValue a) (ZValue b) mempty
 --
-subtype' a b = throwError $ NotSubtype (project a) (project b) mempty
+subtype' a b = throwError $ NotSubtype a b mempty
 
 instantiateL' :: (MonadChecker l m) => Existential -> ZType (Typed l) -> m ()
 instantiateL' alphaHat x = do
@@ -430,7 +457,7 @@ checkType' e@(_ :# l) = do
   e' <- synthesize e
   case exprType e' of
     ZType _ -> pure $ unwrapType e'
-    t -> throwError $ NotSubtype (project t) ZAnyType l
+    t -> throwError $ NotSubtype t ZAnyType l
 
 synthesizeType' :: (MonadChecker l m) => ZType (Untyped l) -> m (ZType (Typed l))
 synthesizeType' (ZType n) = pure $ ZType n
@@ -470,9 +497,10 @@ synthesize' (ESymbol a :# l) = do
 -- Anno
 synthesize' (EAnnotation e a :# l) = do
   a' <- synthesizeType a
-  a'' <- mapError CheckerEvaluatorExc $ evaluateType a'
-  e' <- e `check` a''
-  applyCtxExpr (EAnnotation e' a'' :@ (l, a''))
+  a'' <- mapError CheckerEvaluatorExc (evaluateType =<< traverse infer a')
+  let a''' = retype a''
+  e' <- e `check` a'''
+  applyCtxExpr (EAnnotation e' a''' :@ (l, a'''))
 -- 1|=>
 synthesize' (EUnit :# l) = pure (EUnit :@ (l, ZUnit))
 -- ->|=>
@@ -545,7 +573,7 @@ synthesize' (ECase x (c :| cs) :# loc) = do
     findVars (EPair l r :# _) = (++) <$> findVars l <*> findVars r
     findVars (EApply1 f y :# _) = (++) <$> findVars f <*> findVars y
     findVars (EApplyN f ys :# _) = (++) <$> findVars f <*> (concat <$> traverse findVars ys)
-    findVars p = traceM' (show (project p :: Untyped')) >> throwError (InvalidCasePattern p)
+    findVars p = traceM' (render p) >> throwError (InvalidCasePattern p)
 -- Type
 synthesize' (EType m :# l) = (:@ (l, ZType 0)) . EType <$> synthesizeType m
 -- Quote
@@ -591,8 +619,8 @@ synthesize' (EQuasiQuote x :# lx) = do
 
     qquotedType (ZValue v) = ZValue <$> synthesizeQQuoted v
     qquotedType t = bug (NotImplemented $ render t)
-synthesize' e@(EUnquote _ :# l) = throwError (UnquoteOutsideQuasiquote (project e) l)
-synthesize' e@(EUnquoteSplicing _ :# l) = throwError (UnquoteOutsideQuasiquote (project e) l)
+synthesize' e@(EUnquote _ :# l) = throwError (UnquoteOutsideQuasiquote e l)
+synthesize' e@(EUnquoteSplicing _ :# l) = throwError (UnquoteOutsideQuasiquote e l)
 
 synthesizeFunction1 :: (MonadChecker l m) => Variable -> Untyped l -> m (Typed l, ZType (Typed l), ZType (Typed l))
 synthesizeFunction1 x e = do
@@ -645,7 +673,7 @@ applySynth' (ZImplicit a c) e = do
   a' <- applyCtxType a
   pure (ZImplicit a' f', e', c')
 --
-applySynth' t e@(_ :# l) = throwError $ CannotApply (project t) (project e) l
+applySynth' t e@(_ :# l) = throwError $ CannotApply t e l
 
 isSubtype :: (MonadChecker l m) => ZType (Typed l) -> ZType (Typed l) -> m Bool
 isSubtype a b = do

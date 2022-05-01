@@ -57,8 +57,8 @@ lookupVar t (Context es) = go es
     go (CVariable k v : _)
       | k == t = Just v
     go (CEnvironment env : rs) = case env !? getVariable t of
-      Just v -> Just $ exprType v
       Nothing -> go rs
+      v -> v
     go (_ : rs) = go rs
 
 (<:) :: ContextEntry l -> Context l -> Context l
@@ -121,7 +121,7 @@ solveExistential z e = do
   where
     go (CUnsolved f : rs) | e == f = pure $ CSolved f z : rs
     go (CSolved f y : _)
-      | e == f = throwError $ ExistentialAlreadySolved (project z) f (project y)
+      | e == f = throwError $ ExistentialAlreadySolved z f y
     go (CSolved f q : rs) =
       (CSolved f ((z `substitute` ZExistential e) q) :) <$> go rs
     go (CVariable x q : rs) =

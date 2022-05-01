@@ -8,7 +8,7 @@ import Options.Applicative
 import qualified System.Console.Haskeline as Hl
 import Text.Megaparsec (errorBundlePretty, runParser)
 import Text.Megaparsec.Pos (sourcePosPretty)
-import Zaphod.Base (baseEnvironment)
+import Zaphod.Base (baseContext, baseEnvironment)
 import Zaphod.Evaluator (evaluateTopLevel)
 import Zaphod.Parser (tokens)
 import Zaphod.Types
@@ -25,7 +25,8 @@ type Zaphod = StateT (ZState (Maybe Loc)) (ExceptT (EvaluatorException (Maybe Lo
 emptyZState :: ZState (Maybe Loc)
 emptyZState =
   ZState
-    { _environment = embed <$> baseEnvironment
+    { _environment = embed <$> baseEnvironment,
+      _envContext = embed <$> baseContext
     }
 
 printError :: (MonadIO m) => EvaluatorException (Maybe Loc) -> m ()
@@ -100,11 +101,17 @@ printError err = do
     printLocation (Just (Loc b _)) = putStrLn (sourcePosPretty b <> ": error:")
     printLocation Nothing = pass
 
+putRenderPairLn :: (Render a, Render b, MonadIO m) => (a, b) -> m ()
+putRenderPairLn (a, b) = do
+  putText (render a)
+  putText " : "
+  putTextLn (render b)
+
 evalText :: Text -> Zaphod ()
 evalText t =
   case runParser tokens "<cmd>" t of
     Left e -> putStrLn (errorBundlePretty e)
-    Right rs -> traverse_ (evaluateTopLevel >=> putTextLn . render) $ fmap Just <$> rs
+    Right rs -> traverse_ (evaluateTopLevel >=> putRenderPairLn) $ fmap Just <$> rs
 
 repl :: Maybe Text -> Zaphod ()
 repl _ = do
@@ -129,8 +136,8 @@ repl _ = do
     go z r = do
       res <- runExceptT $ runStateT (evaluateTopLevel r) z
       case res of
-        Right (r', z') -> do
-          putTextLn (render r')
+        Right (p, z') -> do
+          putRenderPairLn p
           pure z'
         Left err -> do
           printError err

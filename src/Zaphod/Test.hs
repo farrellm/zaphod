@@ -5,7 +5,7 @@ module Zaphod.Test where
 import Text.Megaparsec (errorBundlePretty, parse)
 import Zaphod (emptyZState, printError, runFile)
 import Zaphod.Checker (synthesize)
-import Zaphod.Evaluator (analyzeUntyped, evaluate, liftChecker, macroExpand)
+import Zaphod.Evaluator (analyzeUntyped, evaluate, infer, liftChecker, macroExpand)
 import Zaphod.Parser (token)
 import Zaphod.Types
 
@@ -127,7 +127,7 @@ test = do
       Left e -> die (errorBundlePretty e)
       Right v -> pure v
     withZaphod a = do
-      env <- _environment <$> get
+      env <- _envContext <$> get
       freezeState $ evaluatingStateT (emptyCheckerState env) a
     analyzed a =
       withZaphod
@@ -145,6 +145,7 @@ test = do
     evaluated a =
       withZaphod
         ( evaluate
+            =<< infer
             =<< liftChecker [] . synthesize
             =<< analyzeUntyped
             =<< macroExpand . fmap Just

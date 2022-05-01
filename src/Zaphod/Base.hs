@@ -2,6 +2,7 @@
 
 module Zaphod.Base
   ( baseEnvironment,
+    baseContext,
     zBool,
     zTrue,
     zFalse,
@@ -46,37 +47,80 @@ zTuple3 x y z = ZPair x $ zTuple2 y z
 zBool :: ZType Typed'
 zBool = ZValue (ESymbol "Bool" :$ ZSymbol)
 
-zTrue :: Typed'
-zTrue = ESymbol "True" :$ zBool
+zTrue :: Untyped'
+zTrue = LocU $ ESymbol "True"
 
-zFalse :: Typed'
-zFalse = ESymbol "False" :$ zBool
+zFalse :: Untyped'
+zFalse = LocU $ ESymbol "False"
 
-baseEnvironment :: Environment Typed'
+baseEnvironment :: Environment Untyped'
 baseEnvironment =
   (Environment . M.fromList)
     [ -- Native values
-      ("Any", EType ZAny :$ ZType 0),
-      ("Symbol", EType ZSymbol :$ ZType 0),
-      ("Type", EType (ZType 0) :$ ZType 1),
+      ("Any", LocU (EType ZAny)),
+      ("Symbol", LocU (EType ZSymbol)),
+      ("Type", LocU (EType (ZType 0))),
       -- Native functions
-      ("cons", ENative' (Native' (pure . cons . zUncurry2)) :$ zCons),
-      ("fst", ENative' (Native' (fmap fst . getPair "fst")) :$ zFst),
-      ("snd", ENative' (Native' (fmap snd . getPair "snd")) :$ zSnd),
+      ("cons", LocU (ENative' (Native' (pure . cons . zUncurry2)))),
+      ("fst", LocU (ENative' (Native' (fmap fst . getPair "fst")))),
+      ("snd", LocU (ENative' (Native' (fmap snd . getPair "snd")))),
       --
-      ("is-nil", ENative (Native (pure . isNil)) :$ zPred),
-      ("is-symbol", ENative (Native (pure . isSymbol)) :$ zPred),
-      ("is-pair", ENative (Native (pure . isPair)) :$ zPred),
-      ("symbol-eq", ENative (Native (pure . stripEq . zUncurry2')) :$ zSymbolEq),
-      ("symbol-concat", ENative (Native (symbolConcat . zUncurry2')) :$ zSymbolConcat),
-      ("top-eq", ENative (Native (pure . stripEq . zUncurry2')) :$ zAnyEq),
-      ("unsafe-gensym", ENativeIO (NativeIO unsafeGensym) :$ zUnsafeGensym),
-      ("promote", ENative (Native (pure . promote)) :$ zPromote),
+      ("is-nil", LocU (ENative (Native (pure . isNil)))),
+      ("is-symbol", LocU (ENative (Native (pure . isSymbol)))),
+      ("is-pair", LocU (ENative (Native (pure . isPair)))),
+      ("symbol-eq", LocU (ENative (Native (pure . stripEq . zUncurry2')))),
+      ("symbol-concat", LocU (ENative (Native (symbolConcat . zUncurry2')))),
+      ("top-eq", LocU (ENative (Native (pure . stripEq . zUncurry2')))),
+      ("unsafe-gensym", LocU (ENativeIO (NativeIO unsafeGensym))),
+      ("promote", LocU (ENative (Native (pure . promote)))),
       -- Special forms
-      ("if", ESpecial :$ zIf),
-      ("apply", ESpecial :$ zApply),
+      ("if", LocU ESpecial),
+      ("apply", LocU ESpecial),
       -- bypass type checker
-      ("unsafe-coerce", ENative' (Native' pure) :$ zUnsafeCoerce)
+      ("unsafe-coerce", LocU (ENative' (Native' pure)))
+    ]
+  where
+    cons (l@(_ :# ll), r@(_ :# lr)) = EPair l r :# (ll <> lr)
+    isNil (LocU EUnit) = zTrue
+    isNil _ = zFalse
+    isSymbol (LocU ESymbol {}) = zTrue
+    isSymbol _ = zFalse
+    isPair (LocU EPair {}) = zTrue
+    isPair _ = zFalse
+    symbolConcat (x, y) = do
+      s <- liftA2 (<>) (getSymbol "symbol-concat" x) (getSymbol "symbol-concat" y)
+      pure (LocU $ ESymbol s)
+    toZBool True = zTrue
+    toZBool False = zFalse
+    stripEq (x, y) = toZBool (x == y)
+    unsafeGensym = LocU . ESymbol <$> gensym
+    promote x = LocU $ EType (ZValue x)
+
+baseContext :: Environment (ZType Typed')
+baseContext =
+  (Environment . M.fromList)
+    [ -- Native values
+      ("Any", ZType 0),
+      ("Symbol", ZType 0),
+      ("Type", ZType 1),
+      -- Native functions
+      ("cons", zCons),
+      ("fst", zFst),
+      ("snd", zSnd),
+      --
+      ("is-nil", zPred),
+      ("is-symbol", zPred),
+      ("is-pair", zPred),
+      ("symbol-eq", zSymbolEq),
+      ("symbol-concat", zSymbolConcat),
+      ("top-eq", zAnyEq),
+      ("unsafe-gensym", zUnsafeGensym),
+      ("promote", zPromote),
+      -- Special forms
+      ("if", zIf),
+      ("apply", zApply),
+      -- bypass type checker
+      ("unsafe-coerce", zUnsafeCoerce)
     ]
   where
     zCons = ZForall a . ZForall b $ ZFunction (zTuple2 za zb) (ZPair za zb)
@@ -92,44 +136,27 @@ baseEnvironment =
     zSymbolEq = ZFunction (zTuple2 ZSymbol ZSymbol) zBool
     zSymbolConcat = ZFunction (zTuple2 ZSymbol ZSymbol) ZSymbol
     zAnyEq = ZForall a . ZForall b $ ZFunction (zTuple2 za zb) zBool
-    --
-    cons (l@(_ :@ (ll, tl)), r@(_ :@ (lr, tr))) =
-      EPair l r :@ (ll <> lr, ZPair tl tr)
-    isNil (EUnit :$ _) = zTrue
-    isNil _ = zFalse
-    isSymbol (ESymbol {} :$ _) = zTrue
-    isSymbol _ = zFalse
-    isPair (EPair {} :$ _) = zTrue
-    isPair _ = zFalse
-    symbolConcat (x, y) = do
-      s <- liftA2 (<>) (getSymbol "symbol-concat" x) (getSymbol "symbol-concat" y)
-      pure (ESymbol s :$ ZSymbol)
-    toZBool True = zTrue
-    toZBool False = zFalse
-    stripEq (x, y) = toZBool ((project x :: Untyped') == (project y :: Untyped'))
-    unsafeGensym = (:$ ZSymbol) <$> (ESymbol <$> gensym)
-    promote x = EType (ZValue x) :$ ZType 0
 
-getPair :: Text -> Typed l -> Either (NativeException ()) (Typed l, Typed l)
-getPair _ (EPair l r :@ _) = pure (l, r)
+getPair :: Text -> Untyped l -> Either (NativeException ()) (Untyped l, Untyped l)
+getPair _ (EPair l r :# _) = pure (l, r)
 getPair n e = throwError $ TypeMismatch n (project e) () "Pair"
 
-getSymbol :: Text -> Typed' -> Either (NativeException ()) Symbol
-getSymbol _ (ESymbol s :$ _) = pure s
+getSymbol :: Text -> Untyped' -> Either (NativeException ()) Symbol
+getSymbol _ (LocU (ESymbol s)) = pure s
 getSymbol n e = throwError $ TypeMismatch n e () "Symbol"
 
-zUncurry2 :: Typed l -> (Typed l, Typed l)
+zUncurry2 :: Untyped l -> (Untyped l, Untyped l)
 zUncurry2 e
-  | EPair l e' :@ _ <- e,
-    EPair r e'' :@ _ <- e',
-    EUnit :@ _ <- e'' =
+  | EPair l e' :# _ <- e,
+    EPair r e'' :# _ <- e',
+    EUnit :# _ <- e'' =
     (l, r)
 zUncurry2 _ = bug Unreachable
 
-zUncurry2' :: Typed' -> (Typed', Typed')
+zUncurry2' :: Untyped' -> (Untyped', Untyped')
 zUncurry2' e
-  | EPair l e' :$ _ <- e,
-    EPair r e'' :$ _ <- e',
-    EUnit :$ _ <- e'' =
+  | LocU (EPair l e') <- e,
+    LocU (EPair r e'') <- e',
+    LocU EUnit <- e'' =
     (l, r)
 zUncurry2' _ = bug Unreachable

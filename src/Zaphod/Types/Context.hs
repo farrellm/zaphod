@@ -19,7 +19,7 @@ data ContextEntry l
   | CMarker Existential
   | CUniversal Universal
   | CVariable Variable (ZType (Typed l))
-  | CEnvironment (Environment (Typed l))
+  | CEnvironment (Environment (ZType (Typed l)))
   deriving (Show)
 
 instance Render (ContextEntry l) where
