@@ -81,8 +81,7 @@ data Expr f
   | ELambda1 Variable f (Environment f)
   | ELambdaN [Variable] f (Environment f)
   | EImplicit Variable f
-  | EMacro1 Variable f (Environment f)
-  | EMacroN [Variable] f (Environment f)
+  | EMacro f
   | EApply1 f f
   | EApplyN f [f]
   | EPair f f
@@ -247,14 +246,13 @@ instance Render Untyped' where
       go ELambda1 {} = "<lambda>"
       go ELambdaN {} = "<lambda>"
       go EImplicit {} = "<implicit>"
-      go EMacro1 {} = "<macro>"
-      go EMacroN {} = "<macro>"
+      go EMacro {} = "<macro>"
       go (EPair l r) =
         case maybeList e of
           Just xs -> render xs
           Nothing -> render (l, r)
       go ECase {} = "<case>"
-      go (EAnnotation x z) = "(" <> render x <> " : " <> render z <> ")"
+      go (EAnnotation x z) = mconcat ["(", render x, " : ", render z, ")"]
       go (EApply1 f x) = go (EPair f x)
       go (EApplyN f xs) =
         "(" <> T.intercalate " " (render f : toList (render <$> xs)) <> ")"

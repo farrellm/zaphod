@@ -210,9 +210,13 @@
       (car xs)
       (top-last (cdr xs))))
 
-(defmacro (cond . cs)
-  (-> Any Any)
-  (top-foldr (: (lambda (c e) ['if (car c) (cadr c) e])
+(defn (-cond cs)
+  (-> [Any] Any)
+  (top-foldr (: (lambda (c e) `(if ,(car c) ,(cadr c) ,e))
                 (-> [[Any Any] Any] Any))
              (top-last cs)
              (top-init cs)))
+
+(defmacro (cond . cs)
+  (-> Any Any)
+  (-cond cs))

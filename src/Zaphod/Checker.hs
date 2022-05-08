@@ -400,15 +400,9 @@ check' (ELambdaN xs e _ :# l) z@(ZFunction a b)
 check' (EImplicit x e :# l) z@(ZImplicit a b) = do
   e' <- checkFunction1 x e a b
   applyCtxExpr (EImplicit x e' :@ (l, z))
-check' (EMacro1 x e _ :# l) z@(ZFunction a b) = do
-  e'' <- checkFunction1 x e a b
-  applyCtxExpr (EMacro1 x e'' mempty :@ (l, z))
-check' (EMacroN xs e _ :# l) z@(ZFunction a b)
-  | Just cs <- maybeList a,
-    length xs == length cs =
-    do
-      e' <- checkFunctionN xs e cs b
-      applyCtxExpr (EMacroN xs e' mempty :@ (l, z))
+check' (EMacro x :# l) z = do
+  x'@(_ :@ (_, z')) <- check x z
+  pure (EMacro x' :@ (l, z'))
 check' (ENative _ :# _) _ = bug Unreachable
 check' (ENative' _ :# _) _ = bug Unreachable
 check' (ENativeIO _ :# _) _ = bug Unreachable
@@ -513,12 +507,9 @@ synthesize' (ELambdaN xs e _ :# l) = do
 synthesize' (EImplicit x e :# l) = do
   (e', alphaHat, betaHat) <- synthesizeFunction1 x e
   applyCtxExpr (EImplicit x e' :@ (l, ZImplicit alphaHat betaHat))
-synthesize' (EMacro1 x e _ :# l) = do
-  (e', alphaHat, betaHat) <- synthesizeFunction1 x e
-  applyCtxExpr (EMacro1 x e' mempty :@ (l, ZFunction alphaHat betaHat))
-synthesize' (EMacroN xs e _ :# l) = do
-  (e', alphaHats, betaHat) <- synthesizeFunctionN xs e
-  applyCtxExpr (EMacroN xs e' mempty :@ (l, ZFunction (typeTuple alphaHats) betaHat))
+synthesize' (EMacro x :# l) = do
+  x'@(_ :@ (_, z)) <- synthesize x
+  pure (EMacro x' :@ (l, z))
 synthesize' (ENative _ :# _) = bug Unreachable
 synthesize' (ENative' _ :# _) = bug Unreachable
 synthesize' (ENativeIO _ :# _) = bug Unreachable

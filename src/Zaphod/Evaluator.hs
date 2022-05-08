@@ -68,8 +68,7 @@ infer (ESymbol s :@ (l, _)) = pure (ESymbol s :# l)
 infer (EAnnotation a _ :@ _) = infer a
 infer (ELambda1 v e _ :@ (l, _)) = (:# l) <$> (ELambda1 v <$> infer e <*> pure mempty)
 infer (ELambdaN vs e _ :@ (l, _)) = (:# l) <$> (ELambdaN vs <$> infer e <*> pure mempty)
-infer (EMacro1 v e _ :@ (l, _)) = (:# l) <$> (EMacro1 v <$> infer e <*> pure mempty)
-infer (EMacroN vs e _ :@ (l, _)) = (:# l) <$> (EMacroN vs <$> infer e <*> pure mempty)
+infer (EMacro e :@ (l, _)) = (:# l) . EMacro <$> infer e
 infer (ENative f :@ (l, _)) = pure (ENative f :# l)
 infer (ENative' f :@ (l, _)) = pure (ENative' f :# l)
 infer (ENativeIO f :@ (l, _)) = pure (ENativeIO f :# l)
@@ -120,8 +119,7 @@ evaluate = eval
     eval (EPair a b :# l) = (:# l) <$> (EPair <$> eval a <*> eval b)
     eval (ELambda1 v e _ :# l) = (:# l) <$> (ELambda1 v e <$> view environment)
     eval (ELambdaN vs e _ :# l) = (:# l) <$> (ELambdaN vs e <$> view environment)
-    eval (EMacro1 v e _ :# l) = (:# l) <$> (EMacro1 v e <$> view environment)
-    eval (EMacroN vs e _ :# l) = (:# l) <$> (EMacroN vs e <$> view environment)
+    eval (EMacro e :# l) = (:# l) . EMacro <$> eval e
     eval (ECase x (p :| ps) :# l) = evalCase (p : ps) l =<< eval x
     eval (EQuote z :# _) = pure z
     eval (EQuasiQuote q :# _) = evalQQ q
@@ -136,14 +134,6 @@ evaluate = eval
           ELambda1 (Variable v) e env :# _ ->
             local (environment .~ insert v x' env) $ eval e
           ELambdaN vs e env :# _ ->
-            case maybeList x' of
-              Just xs' ->
-                local (environment .~ foldl' insertVar env (zip vs xs')) $
-                  eval e
-              Nothing -> bug Unreachable
-          EMacro1 (Variable v) e env :# _ ->
-            local (environment .~ insert v x' env) $ eval e
-          EMacroN vs e env :# _ ->
             case maybeList x' of
               Just xs' ->
                 local (environment .~ foldl' insertVar env (zip vs xs')) $
@@ -170,10 +160,6 @@ evaluate = eval
           ELambda1 (Variable v) e env :# _ ->
             local (environment .~ insert v (untypedTuple xs') env) $ eval e
           ELambdaN vs e env :# _ ->
-            local (environment .~ foldl' insertVar env (zip vs xs')) $ eval e
-          EMacro1 (Variable v) e env :# _ ->
-            local (environment .~ insert v (untypedTuple xs') env) $ eval e
-          EMacroN vs e env :# _ ->
             local (environment .~ foldl' insertVar env (zip vs xs')) $ eval e
           ENative (Native g) :# _ ->
             case xs' of
@@ -257,12 +243,8 @@ analyzeUntyped (RS "lambda" `RPair` (mxs :. e :. RU) :# l)
 analyzeUntyped r@(RS "lambda" `RPair` _ :# _) = throwError (InvalidLambda r)
 analyzeUntyped (RS "implicit" `RPair` (RS x :. e :. RU) :# l) =
   (:# l) <$> (EImplicit (Variable x) <$> analyzeUntyped e)
-analyzeUntyped (RS "macro" `RPair` (RS x :. e :. RU) :# l) =
-  (:# l) <$> (EMacro1 (Variable x) <$> analyzeUntyped e <*> pure mempty)
-analyzeUntyped (RS "macro" `RPair` (mxs :. e :. RU) :# l)
-  | Just xs <- maybeList mxs,
-    Just vs <- traverse maybeSymbol xs =
-    (:# l) <$> (EMacroN (Variable <$> vs) <$> analyzeUntyped e <*> pure mempty)
+analyzeUntyped ((RSymbol "macro" :# lm) `RPair` x :# l) =
+  (:# l) . EMacro <$> analyzeUntyped ((RSymbol "lambda" :# lm) `RPair` x :# l)
 analyzeUntyped r@(RS "macro" `RPair` _ :# _) = throwError (InvalidMacro r)
 analyzeUntyped r@(RS "case" `RPair` (x :. rs) :# l)
   | Just cs <- nonEmpty =<< maybeList rs = do
@@ -355,17 +337,13 @@ macroExpand1 = go
     go a@(RS "quote" :. _) = pure a
     go (q@(RS "quasiquote") `RPair` r :# l) = (:# l) . RPair q <$> qqExpand r
     go (RPair a@(RS s) b :# lq) = do
-      let r' = RPair a (quoteList b) :# lq
-      f <- view (environment . at s)
-      case f of
-        Just (EMacro1 {} :# _) -> do
-          u <- analyzeUntyped r'
-          t <- evaluate =<< infer =<< liftChecker [] (synthesize u)
-          pure $ toRaw t
-        Just (EMacroN {} :# _) -> do
-          u <- analyzeUntyped r'
-          t <- evaluate =<< infer =<< liftChecker [] (synthesize u)
-          pure $ toRaw t
+      m <- view (environment . at s)
+      case m of
+        Just (EMacro f :# _) -> do
+          b' <- analyzeUntyped $ quote b
+          let u = EApply1 f b' :# lq
+          x <- evaluate =<< infer =<< liftChecker [] (synthesize u)
+          pure $ toRaw x
         _ -> (:# lq) . RPair a <$> goInner b
     go (RPair x y :# l) = (:# l) <$> (RPair <$> go x <*> goInner y)
     go r = pure r
@@ -379,10 +357,6 @@ macroExpand1 = go
     qqExpand q = pure q
 
     quote e@(_ :# l) = rawTuple (RSymbol "quote" :# locBegin l :| [e])
-
-    quoteList (RPair x y :# l) = RPair (quote x) (quoteList y) :# l
-    quoteList e@(RSymbol _ :# _) = quote e
-    quoteList e@(RUnit :# _) = e
 
     toRaw (EUnit :# l) = RUnit :# l
     toRaw (ESymbol s :# l) = RSymbol s :# l

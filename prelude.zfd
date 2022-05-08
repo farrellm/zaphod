@@ -40,33 +40,31 @@
   (-> [Bool] Bool)
   (if p False True))
 
-(defn (-and x)
+(defn (-and y)
   (-> [Any] Any)
-  (if (is-nil (cdr x))
-      (car x)
-      `(if ,(car x)
-           ,(-and (cdr x))
-           False)))
+  (case y
+    (() (: 'True Any))
+    ((x) x)
+    ((x . xs) `(if ,x
+                   ,(-and xs)
+                   False))))
 
 (defmacro (and . x)
   (-> Any Any)
-  (if (is-nil x)
-      (: 'True Any)
-      (-and x)))
+  (-and x))
 
-(defn (-or x)
+(defn (-or y)
   (-> [Any] Any)
-  (if (is-nil (cdr x))
-      (car x)
-      `(if ,(car x)
-           True
-           ,(-or (cdr x)))))
+  (case y
+    (() (: 'False Any))
+    ((x) x)
+    ((x . xs) `(if ,x
+                   True
+                   ,(-or xs)))))
 
 (defmacro (or . x)
   (-> Any Any)
-  (if (is-nil x)
-      (: 'False Any)
-      (-or x)))
+  (-or x))
 
 (defn (unsafe-from-just m)
   ((forall a) (-> [(Maybe a)] a))
