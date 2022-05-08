@@ -72,7 +72,6 @@ infer (EMacro e :@ (l, _)) = (:# l) . EMacro <$> infer e
 infer (ENative f :@ (l, _)) = pure (ENative f :# l)
 infer (ENative' f :@ (l, _)) = pure (ENative' f :# l)
 infer (ENativeIO f :@ (l, _)) = pure (ENativeIO f :# l)
-infer (ESpecial :@ (l, _)) = pure (ESpecial :# l)
 infer (EApply1 f e :@ (l, _)) = (:# l) <$> (EApply1 <$> infer f <*> infer e)
 infer (EApplyN f es :@ (l, _)) = (:# l) <$> (EApplyN <$> infer f <*> traverse infer es)
 infer (EPair a b :@ (l, _)) = (:# l) <$> (EPair <$> infer a <*> infer b)
@@ -89,6 +88,7 @@ infer (EQuasiQuote q :@ (l, _)) = (:# l) . EQuasiQuote <$> inferQQ q
     inferQQ (EUnquote s :@ (m, _)) = (:# m) . EUnquote <$> infer s
     inferQQ (EUnquoteSplicing s :@ (m, _)) = (:# m) . EUnquoteSplicing <$> infer s
     inferQQ e = traceM' (render e) >> bug Unreachable
+infer (ESpecial :@ _) = bug Unreachable
 infer (EUnquoteSplicing {} :@ _) = bug Unreachable
 infer (EUnquote {} :@ _) = bug Unreachable
 
@@ -96,35 +96,47 @@ evaluate :: forall l m. (MonadEvaluator l m) => Untyped l -> m (Untyped l)
 evaluate = eval
   where
     eval :: Untyped l -> m (Untyped l)
+    -- self evaluating
+    eval e@(EUnit :# _) = pure e
+    eval e@(EImplicit {} :# _) = pure e
+    eval e@(ENative {} :# _) = pure e
+    eval e@(ENative' {} :# _) = pure e
+    eval e@(ENativeIO {} :# _) = pure e
+    -- variables
     eval (ESymbol s :# _) = do
       m <- view (environment . at s)
       case m of
         Just v -> pure v
         _ -> bug Unreachable
-    eval (EAnnotation {} :# _) = bug Unreachable
+    -- apply
+    eval (EApply1 f x :# l) = evalApply1 f x l
     eval (EApplyN o xs :# l)
-      | ESymbol "if" :# _ <- o =
-        case xs of
-          [p, a, b] -> do
-            p' <- eval p
-            if project p' == zTrue
-              then eval a
-              else eval b
-          _ -> bug Unreachable
+      | ESymbol "if" :# _ <- o,
+        [p, a, b] <- xs = do
+        p' <- eval p
+        if project p' == zTrue
+          then eval a
+          else eval b
       | ESymbol "apply" :# _ <- o,
         [f, xs'] <- xs =
         eval (EApply1 f xs' :# l)
-    eval (EApply1 f x :# l) = evalApply1 f x l
-    eval (EApplyN f xs :# l) = evalApplyN f xs l
-    eval (EPair a b :# l) = (:# l) <$> (EPair <$> eval a <*> eval b)
+      | otherwise = evalApplyN o xs l
+    -- special forms
     eval (ELambda1 v e _ :# l) = (:# l) <$> (ELambda1 v e <$> view environment)
     eval (ELambdaN vs e _ :# l) = (:# l) <$> (ELambdaN vs e <$> view environment)
     eval (EMacro e :# l) = (:# l) . EMacro <$> eval e
     eval (ECase x (p :| ps) :# l) = evalCase (p : ps) l =<< eval x
+    -- types
+    eval (EType t :# l) = (:# l) . EType <$> evaluateType t
+    -- quoting
     eval (EQuote z :# _) = pure z
     eval (EQuasiQuote q :# _) = evalQQ q
-    eval (EType t :# l) = (:# l) . EType <$> evaluateType t
-    eval e = pure e
+    -- impossible
+    eval (EPair {} :# _) = bug Unreachable
+    eval (ESpecial :# _) = bug Unreachable
+    eval (EAnnotation {} :# _) = bug Unreachable
+    eval (EUnquote {} :# _) = bug Unreachable
+    eval (EUnquoteSplicing {} :# _) = bug Unreachable
 
     evalApply1 f x l = do
       f' <- eval f
@@ -133,22 +145,17 @@ evaluate = eval
         case f' of
           ELambda1 (Variable v) e env :# _ ->
             local (environment .~ insert v x' env) $ eval e
-          ELambdaN vs e env :# _ ->
-            case maybeList x' of
-              Just xs' ->
-                local (environment .~ foldl' insertVar env (zip vs xs')) $
-                  eval e
-              Nothing -> bug Unreachable
+          ELambdaN vs e env :# _
+            | Just xs' <- maybeList x' ->
+              local (environment .~ foldl' insertVar env (zip vs xs')) $ eval e
           EImplicit (Variable v) e :# _ ->
             local (environment %~ insert v x') $ eval e
-          ENative (Native g) :# _ ->
-            case maybeList x' of
-              Just [a] -> liftNative l $ setLocation l <$> g (project a)
-              _ -> bug Unreachable
-          ENative' (Native' g) :# _ ->
-            case maybeList x' of
-              Just [a] -> liftNative l $ g a
-              _ -> bug Unreachable
+          ENative (Native g) :# _
+            | Just [a] <- maybeList x' ->
+              liftNative l $ setLocation l <$> g (project a)
+          ENative' (Native' g) :# _
+            | Just [a] <- maybeList x' ->
+              liftNative l $ g a
           ENativeIO (NativeIO g) :# _ -> setLocation l <$> liftIO g
           _ -> bug Unreachable
 
@@ -173,7 +180,8 @@ evaluate = eval
           _ -> debug (render f') $ bug Unreachable
 
     evalCase ((p, e) : ps) l x
-      | Just bs <- bindings x p = local (environment %~ flip (foldl' insertVar) bs) $ eval e
+      | Just bs <- bindings x p =
+        local (environment %~ flip (foldl' insertVar) bs) $ eval e
       | otherwise = evalCase ps l x
     evalCase [] l x = traceM' (render x) >> throwError (PatternMatchingFailure x l)
 
@@ -182,7 +190,8 @@ evaluate = eval
       | isConstructor r && l == r = Just []
     bindings x (ESymbol r :# _)
       | not (isConstructor r) = Just [(Variable r, x)]
-    bindings (EPair l r :# _) (EApply1 f x :# _) = (++) <$> bindings l f <*> bindings r x
+    bindings (EPair l r :# _) (EApply1 f x :# _) =
+      (++) <$> bindings l f <*> bindings r x
     bindings (EPair l1 r1 :# _) (EApplyN f xs :# _)
       | Just rs <- maybeList r1 =
         (++) <$> bindings l1 f <*> (concat <$> zipWithStrict bindings rs xs)
@@ -253,7 +262,8 @@ analyzeUntyped r@(RS "case" `RPair` (x :. rs) :# l)
       Just cs' -> (:# l) <$> (ECase <$> analyzeUntyped x <*> pure cs')
       Nothing -> throwError (InvalidCase r)
   where
-    analyzeCase (p :. v :. RU) = Just <$> ((,) <$> analyzeUntyped p <*> analyzeUntyped v)
+    analyzeCase (p :. v :. RU) =
+      Just <$> ((,) <$> analyzeUntyped p <*> analyzeUntyped v)
     analyzeCase _ = pure Nothing
 analyzeUntyped r@(RS "case" :. _) = throwError (InvalidCase r)
 analyzeUntyped (RS ":" `RPair` (e :. t :. RU) :# l) =
@@ -268,10 +278,10 @@ analyzeUntyped (RS "->" `RPair` (a :. b :. RU) :# l) =
   liftA2 (\x y -> EType (ZFunction x y) :# l) (analyzeType a) (analyzeType b)
 analyzeUntyped (RS "=>" `RPair` (a :. b :. RU) :# l) =
   liftA2 (\x y -> EType (ZImplicit x y) :# l) (analyzeType a) (analyzeType b)
-analyzeUntyped (RPair a b :# l) =
-  case maybeList b of
-    Just xs -> (:# l) <$> (EApplyN <$> analyzeUntyped a <*> traverse analyzeUntyped xs)
-    Nothing -> (:# l) <$> (EApply1 <$> analyzeUntyped a <*> analyzeUntyped b)
+analyzeUntyped (RPair a b :# l)
+  | Just xs <- maybeList b =
+    (:# l) <$> (EApplyN <$> analyzeUntyped a <*> traverse analyzeUntyped xs)
+  | otherwise = (:# l) <$> (EApply1 <$> analyzeUntyped a <*> analyzeUntyped b)
 
 analyzeType :: (MonadEvaluator l m) => Raw l -> m (ZType (Untyped l))
 analyzeType r = unwrapType <$> analyzeUntyped r
