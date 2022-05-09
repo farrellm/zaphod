@@ -17,7 +17,6 @@ import qualified Data.Set as S
 import Lens.Micro.Platform (at, to, view, (%=), (%~), (.~), (?=), (?~))
 import Relude.Extra.Bifunctor (secondF)
 import Relude.Extra.Map (insert, toPairs)
-import Zaphod.Base (zTrue)
 import Zaphod.Checker (check, isSubtype, retype, synthesize)
 import Zaphod.Context ((<:))
 import Zaphod.Types
@@ -111,12 +110,6 @@ evaluate = eval
     -- apply
     eval (EApply1 f x :# l) = evalApply1 f x l
     eval (EApplyN o xs :# l)
-      | ESymbol "if" :# _ <- o,
-        [p, a, b] <- xs = do
-        p' <- eval p
-        if project p' == zTrue
-          then eval a
-          else eval b
       | ESymbol "apply" :# _ <- o,
         [f, xs'] <- xs =
         eval (EApply1 f xs' :# l)

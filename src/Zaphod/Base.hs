@@ -3,9 +3,6 @@
 module Zaphod.Base
   ( baseEnvironment,
     baseContext,
-    zBool,
-    zTrue,
-    zFalse,
   )
 where
 
@@ -41,9 +38,6 @@ zTuple1 x = ZPair x ZUnit
 zTuple2 :: ZType Typed' -> ZType Typed' -> ZType Typed'
 zTuple2 x y = ZPair x $ zTuple1 y
 
-zTuple3 :: ZType Typed' -> ZType Typed' -> ZType Typed' -> ZType Typed'
-zTuple3 x y z = ZPair x $ zTuple2 y z
-
 zBool :: ZType Typed'
 zBool = ZValue (ESymbol "Bool" :$ ZSymbol)
 
@@ -74,7 +68,6 @@ baseEnvironment =
       ("unsafe-gensym", LocU (ENativeIO (NativeIO unsafeGensym))),
       ("promote", LocU (ENative (Native (pure . promote)))),
       -- Special forms
-      ("if", LocU ESpecial),
       ("apply", LocU ESpecial),
       -- bypass type checker
       ("unsafe-coerce", LocU (ENative' (Native' pure)))
@@ -117,16 +110,16 @@ baseContext =
       ("unsafe-gensym", zUnsafeGensym),
       ("promote", zPromote),
       -- Special forms
-      ("if", zIf),
       ("apply", zApply),
       -- bypass type checker
-      ("unsafe-coerce", zUnsafeCoerce)
+      ("unsafe-coerce", zUnsafeCoerce),
+      -- bootstrapping
+      ("True", zBool)
     ]
   where
     zCons = ZForall a . ZForall b $ ZFunction (zTuple2 za zb) (ZPair za zb)
     zFst = ZForall a . ZForall b $ ZFunction (zTuple1 (ZPair za zb)) za
     zSnd = ZForall a . ZForall b $ ZFunction (zTuple1 (ZPair za zb)) zb
-    zIf = ZForall a $ ZFunction (zTuple3 zBool za za) za
     zApply = ZForall a . ZForall b $ ZFunction (zTuple2 (ZFunction za zb) za) zb
     zUnsafeCoerce = ZForall a . ZForall b $ ZFunction (zTuple1 za) zb
     zUnsafeGensym = ZFunction ZUnit ZSymbol

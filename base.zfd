@@ -31,6 +31,17 @@
 (def cddar (-> [Any] Any) (lambda (x) (cdr (cdr (car x)))))
 (def cdddr (-> [Any] Any) (lambda (x) (cdr (cdr (cdr x)))))
 
+(def defmacro
+     (-> [(cons Symbol Any) Any Any] Any)
+     (macro (p t e)
+       `(def ,(car p) ,t (macro ,(cdr p) ,e))))
+
+(defmacro (if p t e)
+  (-> [Any Any Any] Any)
+  `(case ,p
+     (True ,t)
+     (_ ,e)))
+
 (def top-foldr
      (forall a (forall b (-> [(-> [b a] a) a Any] a)))
      (lambda (f i l)
@@ -100,11 +111,6 @@
      (-> [(cons Symbol Any) Any Any] Any)
      (macro (p t e)
        (-defn (fst p) (snd p) t e)))
-
-(def defmacro
-     (-> [(cons Symbol Any) Any Any] Any)
-     (macro (p t e)
-       `(def ,(car p) ,t (macro ,(cdr p) ,e))))
 
 (defn (top-foldl f i l)
   ((forall a) (-> [(-> [a Any] a) a Any] a))
