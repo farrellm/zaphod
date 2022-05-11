@@ -58,13 +58,12 @@ printError err = do
     CheckerException c -> case c of
       NotSubtype a b l -> do
         printLocation l
-        putTextLn "Not subtype: "
-        putTextLn (render a <> " < " <> render b)
+        putTextLn ("Not subtype: " <> render a <> " < " <> render b)
       TypeError a b l -> do
         printLocation l
-        putTextLn "Type mismatch: "
-        putTextLn (render a <> " /= " <> render b)
-      ExistentialAlreadySolved t e u ->
+        putTextLn ("Type mismatch: " <> render a <> " /= " <> render b)
+      ExistentialAlreadySolved t e u l -> do
+        printLocation l
         putTextLn
           ( "Existential already solved, setting " <> render e <> "=" <> render u
               <> " to "
@@ -76,7 +75,7 @@ printError err = do
       UndefinedVariable s l -> do
         printLocation l
         putTextLn ("Undefined variable: " <> render s)
-      UnquoteOutsideQuasiquote e l -> do
+      UnquoteOutsideQuasiquote e@(_ :# l) -> do
         printLocation l
         putTextLn ("Unquote outside of quasiquote: " <> render e)
       InvalidCasePattern p@(_ :# l) -> do

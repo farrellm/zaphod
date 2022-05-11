@@ -46,11 +46,11 @@ liftNative l = liftEither . first (NativeException . fmap (const l))
 findOfType :: (MonadEvaluator l m) => l -> ZType (Typed l) -> m Symbol
 findOfType l z = do
   vs <- view (envContext . to toPairs)
-  xs <- liftChecker [] $ filterM (isSubtype z . snd) vs
+  xs <- liftChecker [] . withErrorLocation l $ filterM (isSubtype z . snd) vs
   case xs of
     [x] -> pure $ fst x
-    [] -> throwError (NoMatches z l)
-    _ -> throwError (MultipleMatches z (snd <$> xs) l)
+    [] -> throwError (NoMatches (project z) l)
+    _ -> throwError (MultipleMatches (project z) (project . snd <$> xs) l)
 
 infer :: (MonadEvaluator l m) => Typed l -> m (Untyped l)
 infer (EImplicit v@(Variable s) e :@ (l, ZImplicit a _)) = do
@@ -134,7 +134,7 @@ evaluate = eval
     evalApply1 f x l = do
       f' <- eval f
       x' <- eval x
-      modifyError (CallSite l) $
+      withError (CallSite l) $
         case f' of
           ELambda1 (Variable v) e env :# _ ->
             local (environment .~ insert v x' env) $ eval e
@@ -155,7 +155,7 @@ evaluate = eval
     evalApplyN f xs l = do
       f' <- eval f
       xs' <- traverse eval xs
-      modifyError (CallSite l) $
+      withError (CallSite l) $
         case f' of
           ELambda1 (Variable v) e env :# _ ->
             local (environment .~ insert v (untypedTuple xs') env) $ eval e

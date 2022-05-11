@@ -111,7 +111,7 @@ substitute _ _ z@(ZUniversal _) = z
 substitute _ _ z@(ZExistential _) = z
 
 solveExistential ::
-  (MonadState (CheckerState l) m, MonadError (CheckerException l) m) =>
+  (MonadState (CheckerState l) m, MonadError (CheckerException ()) m) =>
   ZType (Typed l) ->
   Existential ->
   m ()
@@ -121,7 +121,7 @@ solveExistential z e = do
   where
     go (CUnsolved f : rs) | e == f = pure $ CSolved f z : rs
     go (CSolved f y : _)
-      | e == f = throwError $ ExistentialAlreadySolved z f y
+      | e == f = throwError $ ExistentialAlreadySolved (project z) f (project y) ()
     go (CSolved f q : rs) =
       (CSolved f ((z `substitute` ZExistential e) q) :) <$> go rs
     go (CVariable x q : rs) =

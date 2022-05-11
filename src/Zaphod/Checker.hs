@@ -131,7 +131,7 @@ isDeeper tau alphaHat = do
     dropExistential (Context (CUnsolved b : rs)) | alphaHat == b = Context rs
     dropExistential (Context (_ : rs)) = dropExistential $ Context rs
 
-existentializeValue :: (MonadChecker l m) => Typed l -> m (Typed l, [(ZType (Typed l), Existential)])
+existentializeValue :: (MonadChecker' l m) => Typed l -> m (Typed l, [(ZType (Typed l), Existential)])
 existentializeValue e@(EUnit :@ _) = pure (e, [])
 existentializeValue e@(ESymbol _ :@ _) = pure (e, [])
 existentializeValue (EType t :@ lt) = do
@@ -169,17 +169,17 @@ retype (ZValue v) = ZValue $ retypeValue v
     retypeValue (EType t :# l) = EType (retype t) :@ (l, ZType 0)
     retypeValue x = bug $ NotImplemented ("retypeValue: " <> render x)
 
-subtype :: (MonadChecker l m) => ZType (Typed l) -> ZType (Typed l) -> m ()
+subtype :: (MonadChecker' l m) => ZType (Typed l) -> ZType (Typed l) -> m ()
 subtype a b =
   logInfo ("sub " <> render a <> " <: " <> render b) $
     subtype' a b
 
-instantiateL :: (MonadChecker l m) => Existential -> ZType (Typed l) -> m ()
+instantiateL :: (MonadChecker' l m) => Existential -> ZType (Typed l) -> m ()
 instantiateL a b =
   logInfo ("inL " <> render a <> " =: " <> render b) $
     instantiateL' a b
 
-instantiateR :: (MonadChecker l m) => ZType (Typed l) -> Existential -> m ()
+instantiateR :: (MonadChecker' l m) => ZType (Typed l) -> Existential -> m ()
 instantiateR a b =
   logInfo ("inR " <> render a <> " := " <> render b) $
     instantiateR' a b
@@ -226,10 +226,10 @@ logInfo m x = do
     mkIndent :: (MonadState (CheckerState l) m) => m Text
     mkIndent = flip T.replicate "| " <$> use depth
 
-subtype' :: (MonadChecker l m) => ZType (Typed l) -> ZType (Typed l) -> m ()
+subtype' :: (MonadChecker' l m) => ZType (Typed l) -> ZType (Typed l) -> m ()
 -- <:Any
-subtype' a@(ZType _) ZAny = throwError $ NotSubtype a ZAny mempty
-subtype' ZAnyType ZAny = throwError $ NotSubtype ZAnyType ZAny mempty
+subtype' a@(ZType _) ZAny = throwError $ NotSubtype (project a) ZAny ()
+subtype' ZAnyType ZAny = throwError $ NotSubtype ZAnyType ZAny ()
 subtype' _ ZAny = pass
 subtype' (ZType _) ZAnyType = pass
 -- <:Var
@@ -272,11 +272,11 @@ subtype' (ZValue x) (ZValue y) = x `exprSubtype` y
       al `exprSubtype` bl
       ar `exprSubtype` br
     exprSubtype (EType a :@ _) (EType b :@ _) = a `subtype` b
-    exprSubtype a b = throwError $ NotSubtype (ZValue a) (ZValue b) mempty
+    exprSubtype a b = throwError $ NotSubtype (project $ ZValue a) (project $ ZValue b) ()
 --
-subtype' a b = throwError $ NotSubtype a b mempty
+subtype' a b = throwError $ NotSubtype (project a) (project b) ()
 
-instantiateL' :: (MonadChecker l m) => Existential -> ZType (Typed l) -> m ()
+instantiateL' :: forall l m. (MonadChecker' l m) => Existential -> ZType (Typed l) -> m ()
 instantiateL' alphaHat x = do
   d <-
     if isMonoType x
@@ -329,7 +329,7 @@ instantiateL' alphaHat x = do
       (`instantiateR` alphaHat1) =<< applyCtxType a1
       (alphaHat2 `instantiateL`) =<< applyCtxType a2
 
-instantiateR' :: (MonadChecker l m) => ZType (Typed l) -> Existential -> m ()
+instantiateR' :: (MonadChecker' l m) => ZType (Typed l) -> Existential -> m ()
 instantiateR' x alphaHat = do
   d <-
     if isMonoType x
@@ -419,7 +419,7 @@ check' e@(_ :# l) ZAnyType = (\t -> EType t :@ (l, ZAnyType)) <$> checkType e
 check' e@(_ :# l) b = do
   a <- synthesize e
   b' <- applyCtxType b
-  mapError (const l <$>) $ exprType a `subtype` b'
+  withErrorLocation l $ exprType a `subtype` b'
   applyCtxExpr a
 
 checkFunction1 :: (MonadChecker l m) => Variable -> Untyped l -> ZType (Typed l) -> ZType (Typed l) -> m (Typed l)
@@ -451,7 +451,7 @@ checkType' e@(_ :# l) = do
   e' <- synthesize e
   case exprType e' of
     ZType _ -> pure $ unwrapType e'
-    t -> throwError $ NotSubtype t ZAnyType l
+    t -> throwError $ NotSubtype (project t) ZAnyType l
 
 synthesizeType' :: (MonadChecker l m) => ZType (Untyped l) -> m (ZType (Typed l))
 synthesizeType' (ZType n) = pure $ ZType n
@@ -491,7 +491,10 @@ synthesize' (ESymbol a :# l) = do
 -- Anno
 synthesize' (EAnnotation e a :# l) = do
   a' <- synthesizeType a
-  a'' <- mapError CheckerEvaluatorExc (evaluateType =<< traverse infer a')
+  a'' <-
+    runExceptT (evaluateType =<< traverse infer a') >>= \case
+      Right res -> pure res
+      Left err -> throwError $ CheckerEvaluatorExc err
   let a''' = retype a''
   e' <- e `check` a'''
   applyCtxExpr (EAnnotation e' a''' :@ (l, a'''))
@@ -610,8 +613,8 @@ synthesize' (EQuasiQuote x :# lx) = do
 
     qquotedType (ZValue v) = ZValue <$> synthesizeQQuoted v
     qquotedType t = bug (NotImplemented $ render t)
-synthesize' e@(EUnquote _ :# l) = throwError (UnquoteOutsideQuasiquote e l)
-synthesize' e@(EUnquoteSplicing _ :# l) = throwError (UnquoteOutsideQuasiquote e l)
+synthesize' e@(EUnquote _ :# _) = throwError (UnquoteOutsideQuasiquote e)
+synthesize' e@(EUnquoteSplicing _ :# _) = throwError (UnquoteOutsideQuasiquote e)
 
 synthesizeFunction1 :: (MonadChecker l m) => Variable -> Untyped l -> m (Typed l, ZType (Typed l), ZType (Typed l))
 synthesizeFunction1 x e = do
@@ -642,13 +645,13 @@ applySynth' (ZForall alpha a) e = do
   let a' = (ZExistential alphaHat `substitute` ZUniversal alpha) a
   a' `applySynth` e
 -- alphaHatApp
-applySynth' (ZExistential alphaHat) e = do
+applySynth' (ZExistential alphaHat) e@(_ :# l) = do
   (alphaHat2, alphaHat1) <- withHole alphaHat $ do
     a2 <- nextExtential
     a1 <- nextExtential
     pure (a2, a1)
   let f = ZFunction (ZExistential alphaHat1) (ZExistential alphaHat2)
-  solveExistential f alphaHat
+  withErrorLocation l $ solveExistential f alphaHat
   e' <- e `check` ZExistential alphaHat1
   f' <- applyCtxType f
   c' <- applyCtxType (ZExistential alphaHat2)
@@ -664,10 +667,10 @@ applySynth' (ZImplicit a c) e = do
   a' <- applyCtxType a
   pure (ZImplicit a' f', e', c')
 --
-applySynth' t e@(_ :# l) = throwError $ CannotApply t e l
+applySynth' t e@(_ :# l) = throwError $ CannotApply (project t) (project e) l
 
-isSubtype :: (MonadChecker l m) => ZType (Typed l) -> ZType (Typed l) -> m Bool
+isSubtype :: (MonadChecker' l m) => ZType (Typed l) -> ZType (Typed l) -> m Bool
 isSubtype a b = do
-  catchError (subtype a b >> pure True) $ \case
+  catchError (a `subtype` b >> pure True) $ \case
     NotSubtype {} -> pure False
     err -> throwError err
