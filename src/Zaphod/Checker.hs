@@ -492,7 +492,7 @@ synthesize' (ESymbol a :# l) = do
 synthesize' (EAnnotation e a :# l) = do
   a' <- synthesizeType a
   a'' <-
-    runExceptT (evaluateType =<< traverse infer a') >>= \case
+    runExceptT (evaluateType l =<< traverse infer a') >>= \case
       Right res -> pure res
       Left err -> throwError $ CheckerEvaluatorExc err
   let a''' = retype a''
@@ -524,7 +524,7 @@ synthesize' (EApply1 e1 e2 :# l) = do
   applyCtxExpr (EApply1 (setType ze1'' e1') e2' :@ (l, c))
 synthesize' (EApplyN e1 e2s :# l) = do
   e1' <- synthesize e1
-  (ze1'', e2', c) <- exprType e1' `applySynth` untypedTuple e2s
+  (ze1'', e2', c) <- exprType e1' `applySynth` untypedTuple (locEnd l) e2s
   case maybeList e2' of
     Just e2s' -> applyCtxExpr (EApplyN (setType ze1'' e1') e2s' :@ (l, c))
     Nothing -> bug Unreachable

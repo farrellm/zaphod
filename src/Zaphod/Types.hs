@@ -20,7 +20,6 @@ type MonadChecker l m =
     MonadState (CheckerState l) m,
     MonadError (CheckerException l) m,
     MonadIO m,
-    Monoid l,
     Location l
   )
 
@@ -29,7 +28,6 @@ type MonadChecker' l m =
     MonadState (CheckerState l) m,
     MonadError (CheckerException ()) m,
     MonadIO m,
-    Monoid l,
     Location l
   )
 
@@ -37,6 +35,5 @@ type MonadEvaluator l m =
   ( MonadReader (ZState l) m,
     MonadError (EvaluatorException l) m,
     MonadIO m,
-    Monoid l,
     Location l
   )

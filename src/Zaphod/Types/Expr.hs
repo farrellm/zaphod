@@ -183,14 +183,11 @@ instance Eq NativeIO where
 instance Show NativeIO where
   show _ = "NativeIO <nativeIO>"
 
-instance (Location l) => Magma (l, ZType f) where
-  (lx, tx) >< (ly, ty) = (lx <> ly, tx >< ty)
+instance Magma Untyped' where
+  x >< y = LocU $ EPair x y
 
-instance (Location l) => Magma (Untyped l) where
+instance (Semigroup l) => Magma (Untyped l) where
   x@(_ :# lx) >< y@(_ :# ly) = EPair x y :# (lx <> ly)
-
-instance (Location l) => Magma (Typed l) where
-  x@(_ :@ tx) >< y@(_ :@ ty) = EPair x y :@ (tx >< ty)
 
 instance MaybeList Untyped' where
   isList (LocU EUnit) = True
@@ -283,15 +280,13 @@ setType z (e :@ (l, _)) = e :@ (l, z)
 typeTuple :: [ZType l] -> ZType l
 typeTuple = foldr (><) ZUnit
 
-untypedTuple :: (Location l, Monoid l) => [Untyped l] -> Untyped l
-untypedTuple [] = EUnit :# mempty
-untypedTuple [x@(_ :# lx)] = EPair x (EUnit :# locEnd lx) :# lx
-untypedTuple (x : xs) = x >< untypedTuple xs
+untypedTuple' :: [Untyped'] -> Untyped'
+untypedTuple' = foldr (><) (LocU EUnit)
 
-typedTuple :: (Location l, Monoid l) => [Typed l] -> Typed l
-typedTuple [] = EUnit :@ (mempty, ZUnit)
-typedTuple [x@(_ :@ (l, _))] = x >< (EUnit :@ (locEnd l, ZUnit))
-typedTuple (x : xs) = x >< typedTuple xs
+untypedTuple :: (Location l) => l -> [Untyped l] -> Untyped l
+untypedTuple l [] = EUnit :# l
+untypedTuple _ [x@(_ :# lx)] = EPair x (EUnit :# locEnd lx) :# lx
+untypedTuple l (x : xs) = x >< untypedTuple l xs
 
 isConstructor :: Symbol -> Bool
 isConstructor (Symbol s) = isUpper $ T.head s

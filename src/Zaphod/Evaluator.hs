@@ -120,7 +120,7 @@ evaluate = eval
     eval (EMacro e :# l) = (:# l) . EMacro <$> eval e
     eval (ECase x (p :| ps) :# l) = evalCase (p : ps) l =<< eval x
     -- types
-    eval (EType t :# l) = (:# l) . EType <$> evaluateType t
+    eval (EType t :# l) = (:# l) . EType <$> evaluateType l t
     -- quoting
     eval (EQuote z :# _) = pure z
     eval (EQuasiQuote q :# _) = evalQQ q
@@ -158,17 +158,17 @@ evaluate = eval
       withError (CallSite l) $
         case f' of
           ELambda1 (Variable v) e env :# _ ->
-            local (environment .~ insert v (untypedTuple xs') env) $ eval e
+            local (environment .~ insert v (untypedTuple (locEnd l) xs') env) $ eval e
           ELambdaN vs e env :# _ ->
             local (environment .~ foldl' insertVar env (zip vs xs')) $ eval e
           ENative (Native g) :# _ ->
             case xs' of
               [x'] -> liftNative l $ setLocation l <$> g (project x')
-              _ -> liftNative l $ setLocation l <$> g (project $ untypedTuple xs')
+              _ -> liftNative l $ setLocation l <$> g (untypedTuple' $ project <$> xs')
           ENative' (Native' g) :# _ ->
             case xs' of
               [x'] -> liftNative l $ g x'
-              _ -> liftNative l $ g (untypedTuple xs')
+              _ -> liftNative l $ g (untypedTuple (locEnd l) xs')
           ENativeIO (NativeIO g) :# _ -> setLocation l <$> liftIO g
           _ -> debug (render f') $ bug Unreachable
 
@@ -206,15 +206,15 @@ evaluate = eval
     insertVar :: Environment a -> (Variable, a) -> Environment a
     insertVar env (Variable v, x) = insert v x env
 
-evaluateType :: (MonadEvaluator l m) => ZType (Untyped l) -> m (ZType (Untyped l))
-evaluateType (ZForall u@(Universal s) z) = do
-  let u' = EType (ZUniversal u) :# mempty
-   in ZForall u <$> local (environment . at s ?~ u') (evaluateType z)
-evaluateType (ZFunction a b) = ZFunction <$> evaluateType a <*> evaluateType b
-evaluateType (ZImplicit a b) = ZImplicit <$> evaluateType a <*> evaluateType b
-evaluateType (ZPair a b) = ZPair <$> evaluateType a <*> evaluateType b
-evaluateType (ZValue a) = unwrapType <$> evaluate a
-evaluateType z = pure z
+evaluateType :: (MonadEvaluator l m) => l -> ZType (Untyped l) -> m (ZType (Untyped l))
+evaluateType l (ZForall u@(Universal s) z) = do
+  let u' = EType (ZUniversal u) :# l
+   in ZForall u <$> local (environment . at s ?~ u') (evaluateType l z)
+evaluateType l (ZFunction a b) = ZFunction <$> evaluateType l a <*> evaluateType l b
+evaluateType l (ZImplicit a b) = ZImplicit <$> evaluateType l a <*> evaluateType l b
+evaluateType l (ZPair a b) = ZPair <$> evaluateType l a <*> evaluateType l b
+evaluateType _ (ZValue a) = unwrapType <$> evaluate a
+evaluateType _ z = pure z
 
 analyzeQuoted :: Raw l -> Untyped l
 analyzeQuoted (RUnit :# l) = EUnit :# l
