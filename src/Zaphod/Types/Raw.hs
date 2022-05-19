@@ -32,6 +32,10 @@ instance Render (Raw l) where
   render (RUnit :# _) = "()"
   render (RSymbol s :# _) = render s
   render (RTsSymbol s n :# _) = render s <> "@" <> show n
+  render (RPair (RS "quote") r :# _) = "'" <> render r
+  render (RPair (RS "quasiquote") r :# _) = "`" <> render r
+  render (RPair (RS "unquote") r :# _) = "," <> render r
+  render (RPair (RS "unquote-splicing") r :# _) = ",@" <> render r
   render p@(RPair l r :# _) =
     case maybeList p of
       Just xs -> render xs
