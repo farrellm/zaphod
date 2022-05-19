@@ -47,7 +47,9 @@ printError err = do
       TypeMismatch f x l t -> do
         printLocation l
         putTextLn
-          ( "Runtime type mismatch in " <> f <> ", expecting "
+          ( "Runtime type mismatch in "
+              <> f
+              <> ", expecting "
               <> t
               <> " but got "
               <> render x
@@ -65,7 +67,10 @@ printError err = do
       ExistentialAlreadySolved t e u l -> do
         printLocation l
         putTextLn
-          ( "Existential already solved, setting " <> render e <> "=" <> render u
+          ( "Existential already solved, setting "
+              <> render e
+              <> "="
+              <> render u
               <> " to "
               <> render t
           )

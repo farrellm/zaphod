@@ -114,7 +114,7 @@ evaluate = eval
     eval (EApplyN o xs :# l)
       | ESymbol "apply" :# _ <- o,
         [f, xs'] <- xs =
-        eval (EApply1 f xs' :# l)
+          eval (EApply1 f xs' :# l)
       | otherwise = evalApplyN o xs l
     -- special forms
     eval (ELambda1 v e _ :# l) = (:# l) <$> (ELambda1 v e <$> view environment)
@@ -142,15 +142,15 @@ evaluate = eval
             local (environment .~ insert v x' env) $ eval e
           ELambdaN vs e env :# _
             | Just xs' <- maybeList x' ->
-              local (environment .~ foldl' insertVar env (zip vs xs')) $ eval e
+                local (environment .~ foldl' insertVar env (zip vs xs')) $ eval e
           EImplicit (Variable v) e :# _ ->
             local (environment %~ insert v x') $ eval e
           ENative (Native g) :# _
             | Just [a] <- maybeList x' ->
-              liftNative l $ setLocation l <$> g (project a)
+                liftNative l $ setLocation l <$> g (project a)
           ENative' (Native' g) :# _
             | Just [a] <- maybeList x' ->
-              liftNative l $ g a
+                liftNative l $ g a
           ENativeIO (NativeIO g) :# _ -> setLocation l <$> liftIO g
           _ -> bug Unreachable
 
@@ -176,7 +176,7 @@ evaluate = eval
 
     evalCase ((p, e) : ps) l x
       | Just bs <- bindings x p =
-        local (environment %~ flip (foldl' insertVar) bs) $ eval e
+          local (environment %~ flip (foldl' insertVar) bs) $ eval e
       | otherwise = evalCase ps l x
     evalCase [] l x = traceM' (render x) >> throwError (PatternMatchingFailure x l)
 
@@ -189,7 +189,7 @@ evaluate = eval
       (++) <$> bindings l f <*> bindings r x
     bindings (EPair l1 r1 :# _) (EApplyN f xs :# _)
       | Just rs <- maybeList r1 =
-        (++) <$> bindings l1 f <*> (concat <$> zipWithStrict bindings rs xs)
+          (++) <$> bindings l1 f <*> (concat <$> zipWithStrict bindings rs xs)
     bindings _ _ = Nothing
 
     zipWithStrict :: (a -> b -> Maybe c) -> [a] -> [b] -> Maybe [c]
@@ -246,7 +246,7 @@ analyzeUntyped (RS "lambda" `RPair` (RS x :. e :. RU) :# l) =
 analyzeUntyped (RS "lambda" `RPair` (mxs :. e :. RU) :# l)
   | Just xs <- maybeList mxs,
     Just vs <- traverse maybeSymbol xs =
-    (:# l) <$> (ELambdaN (Variable <$> vs) <$> analyzeUntyped e <*> pure mempty)
+      (:# l) <$> (ELambdaN (Variable <$> vs) <$> analyzeUntyped e <*> pure mempty)
 analyzeUntyped r@(RS "lambda" `RPair` _ :# _) = throwError (InvalidLambda r)
 analyzeUntyped (RS "implicit" `RPair` (RS x :. e :. RU) :# l) =
   (:# l) <$> (EImplicit (Variable x) <$> analyzeUntyped e)
@@ -256,10 +256,10 @@ analyzeUntyped ((RTsSymbol "macro" _ :# lm) `RPair` x :# l) =
   (:# l) . EMacro <$> analyzeUntyped ((RSymbol "lambda" :# lm) `RPair` x :# l)
 analyzeUntyped r@(RS "case" `RPair` (x :. rs) :# l)
   | Just cs <- nonEmpty =<< maybeList rs = do
-    mcs' <- traverse analyzeCase cs
-    case sequence mcs' of
-      Just cs' -> (:# l) <$> (ECase <$> analyzeUntyped x <*> pure cs')
-      Nothing -> throwError (InvalidCase r)
+      mcs' <- traverse analyzeCase cs
+      case sequence mcs' of
+        Just cs' -> (:# l) <$> (ECase <$> analyzeUntyped x <*> pure cs')
+        Nothing -> throwError (InvalidCase r)
   where
     analyzeCase (p :. v :. RU) =
       Just <$> ((,) <$> analyzeUntyped p <*> analyzeUntyped v)
@@ -279,7 +279,7 @@ analyzeUntyped (RS "=>" `RPair` (a :. b :. RU) :# l) =
   liftA2 (\x y -> EType (ZImplicit x y) :# l) (analyzeType a) (analyzeType b)
 analyzeUntyped (RPair a b :# l)
   | Just xs <- maybeList b =
-    (:# l) <$> (EApplyN <$> analyzeUntyped a <*> traverse analyzeUntyped xs)
+      (:# l) <$> (EApplyN <$> analyzeUntyped a <*> traverse analyzeUntyped xs)
   | otherwise = (:# l) <$> (EApply1 <$> analyzeUntyped a <*> analyzeUntyped b)
 
 analyzeType :: (MonadEvaluator l m) => Raw l -> m (ZType (Untyped l))
@@ -327,7 +327,7 @@ evaluateRaw m x = do
     mkEUMap [] _ _ = mempty :: Map Existential Universal
     mkEUMap es@(e : es') us (c : cs)
       | Universal (fromString [c]) `S.notMember` us =
-        one (e, Universal $ fromString [c]) <> mkEUMap es' us cs
+          one (e, Universal $ fromString [c]) <> mkEUMap es' us cs
       | otherwise = mkEUMap es us cs
     mkEUMap _ _ [] = bug Unreachable
 

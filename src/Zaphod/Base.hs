@@ -165,7 +165,7 @@ zUncurry2 e
   | EPair l e' :# _ <- e,
     EPair r e'' :# _ <- e',
     EUnit :# _ <- e'' =
-    (l, r)
+      (l, r)
 zUncurry2 _ = bug Unreachable
 
 zUncurry2' :: Untyped' -> (Untyped', Untyped')
@@ -173,5 +173,5 @@ zUncurry2' e
   | LocU (EPair l e') <- e,
     LocU (EPair r e'') <- e',
     LocU EUnit <- e'' =
-    (l, r)
+      (l, r)
 zUncurry2' _ = bug Unreachable

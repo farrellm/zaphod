@@ -394,9 +394,9 @@ check' (ELambda1 x e _ :# l) z@(ZFunction a b) = do
 check' (ELambdaN xs e _ :# l) z@(ZFunction a b)
   | Just cs <- maybeList a,
     length xs == length cs =
-    do
-      e' <- checkFunctionN xs e cs b
-      applyCtxExpr (ELambdaN xs e' mempty :@ (l, z))
+      do
+        e' <- checkFunctionN xs e cs b
+        applyCtxExpr (ELambdaN xs e' mempty :@ (l, z))
 check' (EImplicit x e :# l) z@(ZImplicit a b) = do
   e' <- checkFunction1 x e a b
   applyCtxExpr (EImplicit x e' :@ (l, z))
