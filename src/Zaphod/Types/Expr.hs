@@ -78,6 +78,7 @@ data Expr f
   = EType (ZType f)
   | EUnit
   | ESymbol Symbol
+  | ETsSymbol Symbol Int
   | ELambda1 Variable f (Environment f)
   | ELambdaN [Variable] f (Environment f)
   | EImplicit Variable f
@@ -242,6 +243,7 @@ instance Render Untyped' where
       go (ESymbol t) = render t
       go ELambda1 {} = "<lambda>"
       go ELambdaN {} = "<lambda>"
+      go (ETsSymbol t n) = render t <> "@" <> show n
       go EImplicit {} = "<implicit>"
       go EMacro {} = "<macro>"
       go (EPair l r) =

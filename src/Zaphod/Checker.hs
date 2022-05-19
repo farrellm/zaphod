@@ -488,6 +488,7 @@ synthesize' (ESymbol a :# l) = do
   case lookupVar (Variable a) ctx of
     Just t -> pure (ESymbol a :@ (l, t))
     Nothing -> throwError $ UndefinedVariable (Variable a) l
+synthesize' (ETsSymbol {} :# _) = bug Unreachable
 -- Anno
 synthesize' (EAnnotation e a :# l) = do
   a' <- synthesizeType a
@@ -579,6 +580,7 @@ synthesize' (EQuote x :# lq) =
     synthesizeQuoted (EType n :# loc) = EType (quotedType n) :@ (loc, ZType 0)
     synthesizeQuoted (EUnit :# loc) = EUnit :@ (loc, ZUnit)
     synthesizeQuoted (ESymbol s :# loc) = ESymbol s :@ (loc, ZSymbol)
+    synthesizeQuoted (ETsSymbol s n :# loc) = ETsSymbol s n :@ (loc, ZSymbol)
     synthesizeQuoted (EPair l r :# loc) =
       let l' = synthesizeQuoted l
           r' = synthesizeQuoted r

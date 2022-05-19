@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Zaphod.Types.Raw where
 
@@ -10,6 +11,7 @@ import Zaphod.Types.Wrapper (Symbol)
 data RawF k
   = RUnit
   | RSymbol Symbol
+  | RTsSymbol Symbol Int
   | RPair k k
   deriving (Show, Eq, Functor)
 
@@ -29,6 +31,7 @@ instance Eq (Raw l) where
 instance Render (Raw l) where
   render (RUnit :# _) = "()"
   render (RSymbol s :# _) = render s
+  render (RTsSymbol s n :# _) = render s <> "@" <> show n
   render p@(RPair l r :# _) =
     case maybeList p of
       Just xs -> render xs
@@ -46,11 +49,16 @@ instance MaybeList (Raw l) where
 instance (Location l) => Magma (Raw l) where
   x@(_ :# lx) >< y@(_ :# ly) = RPair x y :# (lx <> ly)
 
+viewSymbol :: Raw l -> Maybe Symbol
+viewSymbol (RSymbol s :# _) = Just s
+viewSymbol (RTsSymbol s _ :# _) = Just s
+viewSymbol _ = Nothing
+
 pattern RU :: Raw l
 pattern RU <- RUnit :# _
 
 pattern RS :: Symbol -> Raw l
-pattern RS s <- RSymbol s :# _
+pattern RS s <- (viewSymbol -> Just s)
 
 pattern (:.) :: Raw l -> Raw l -> Raw l
 pattern (:.) x y <- RPair x y :# _

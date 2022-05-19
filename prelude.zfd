@@ -139,17 +139,16 @@
                                  `(-> [(,n ,@ps)] ,(cadr f)))
                        (unsafe-coerce ,(-unsafe-top-nth i '(cdr r))))))
         (xs (top-map cadr fs))
-        (g (symbol-concat '_ c ))
-        (l (unsafe-gensym))
+        (g (capture (symbol-concat '_ c )))
         (ks' (if (is-nil ks)
                  (top-map (lambda (f) (car f)) fs)
                  ks)))
     `(begin
        (data ,(cons n ts)
              ,(cons g xs))
-       (defmacro (,c ,@l)
+       (defmacro (,c . l)
          (-> Any Any)
-         (-apply-alist ',g ',ks' ,l))
+         (-apply-alist ',g ',ks' l))
        ,@(top-map-index mk-field fs))))
 
 (def record
@@ -169,7 +168,7 @@
     `(begin
        ,(-record n
                  ts
-                 (symbol-concat 'Mk n)
+                 (capture (symbol-concat 'Mk n))
                  (top-map (lambda (f)
                             (cons (alist-lookup (car f) gm)
                                   (cdr f)))
@@ -178,15 +177,14 @@
 
        ,@(top-map
           (lambda (f)
-            (let ((r (unsafe-gensym))
-                  (ps (unsafe-gensyms (cdadr f))))
+            (let ((ps (unsafe-gensyms (cdadr f))))
               `(def ,(car f)
                     ,(-forall ts'
                               `(=> (,n ,@ts')
                                    ,(cadr f)))
-                    (implicit ,r
+                    (implicit r
                       (lambda ,ps
-                        ((,(alist-lookup (car f) gm) ,r)
+                        ((,(alist-lookup (car f) gm) r)
                          ,@ps))))))
           fs))))
 

@@ -16,7 +16,7 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import Lens.Micro.Platform (at, to, view, (%=), (%~), (.~), (?=), (?~))
 import Relude.Extra.Bifunctor (secondF)
-import Relude.Extra.Map (insert, toPairs)
+import Relude.Extra.Map (insert, member, toPairs, (!?))
 import Zaphod.Checker (check, isSubtype, retype, synthesize)
 import Zaphod.Context ((<:))
 import Zaphod.Types
@@ -64,6 +64,7 @@ infer (EApplyN f@(_ :@ (l, ZImplicit a _)) xs :@ (la, _)) = do
   pure (EApplyN (EApply1 f' (ESymbol i :# l) :# la) xs' :# la)
 infer (EUnit :@ (l, _)) = pure (EUnit :# l)
 infer (ESymbol s :@ (l, _)) = pure (ESymbol s :# l)
+infer (ETsSymbol {} :@ _) = bug Unreachable
 infer (EAnnotation a _ :@ _) = infer a
 infer (ELambda1 v e _ :@ (l, _)) = (:# l) <$> (ELambda1 v <$> infer e <*> pure mempty)
 infer (ELambdaN vs e _ :@ (l, _)) = (:# l) <$> (ELambdaN vs <$> infer e <*> pure mempty)
@@ -107,6 +108,7 @@ evaluate = eval
       case m of
         Just v -> pure v
         _ -> bug Unreachable
+    eval (ETsSymbol {} :# _) = bug Unreachable
     -- apply
     eval (EApply1 f x :# l) = evalApply1 f x l
     eval (EApplyN o xs :# l)
@@ -219,11 +221,13 @@ evaluateType _ z = pure z
 analyzeQuoted :: Raw l -> Untyped l
 analyzeQuoted (RUnit :# l) = EUnit :# l
 analyzeQuoted (RSymbol s :# l) = ESymbol s :# l
+analyzeQuoted (RTsSymbol s n :# l) = ETsSymbol s n :# l
 analyzeQuoted (RPair x y :# l) = EPair (analyzeQuoted x) (analyzeQuoted y) :# l
 
 analyzeQQuoted :: (MonadEvaluator l m) => Raw l -> m (Untyped l)
 analyzeQQuoted (RUnit :# l) = pure (EUnit :# l)
 analyzeQQuoted (RSymbol s :# l) = pure (ESymbol s :# l)
+analyzeQQuoted (RTsSymbol s n :# l) = pure (ETsSymbol s n :# l)
 analyzeQQuoted (RS "unquote" `RPair` (y :. RU) :# l) =
   (:# l) . EUnquote <$> analyzeUntyped y
 analyzeQQuoted ((RS "unquote-splicing" `RPair` (y :. RU) :# lq) `RPair` r :# l) = do
@@ -235,7 +239,8 @@ analyzeQQuoted (RPair x y :# l) =
 
 analyzeUntyped :: (MonadEvaluator l m) => Raw l -> m (Untyped l)
 analyzeUntyped (RUnit :# l) = pure (EUnit :# l)
-analyzeUntyped (RSymbol s :# l) = pure $ ESymbol s :# l
+analyzeUntyped (RSymbol s :# l) = pure (ESymbol s :# l)
+analyzeUntyped (RTsSymbol s n :# l) = pure (ETsSymbol s n :# l)
 analyzeUntyped (RS "lambda" `RPair` (RS x :. e :. RU) :# l) =
   (:# l) <$> (ELambda1 (Variable x) <$> analyzeUntyped e <*> pure mempty)
 analyzeUntyped (RS "lambda" `RPair` (mxs :. e :. RU) :# l)
@@ -247,7 +252,8 @@ analyzeUntyped (RS "implicit" `RPair` (RS x :. e :. RU) :# l) =
   (:# l) <$> (EImplicit (Variable x) <$> analyzeUntyped e)
 analyzeUntyped ((RSymbol "macro" :# lm) `RPair` x :# l) =
   (:# l) . EMacro <$> analyzeUntyped ((RSymbol "lambda" :# lm) `RPair` x :# l)
-analyzeUntyped r@(RS "macro" `RPair` _ :# _) = throwError (InvalidMacro r)
+analyzeUntyped ((RTsSymbol "macro" _ :# lm) `RPair` x :# l) =
+  (:# l) . EMacro <$> analyzeUntyped ((RSymbol "lambda" :# lm) `RPair` x :# l)
 analyzeUntyped r@(RS "case" `RPair` (x :. rs) :# l)
   | Just cs <- nonEmpty =<< maybeList rs = do
     mcs' <- traverse analyzeCase cs
@@ -334,44 +340,85 @@ evaluateRaw m x = do
     replaceExt eus (ZValue a) = ZValue $ omap (replaceExt eus) a
     replaceExt _ z = z
 
-macroExpand1 :: (MonadEvaluator l m) => Raw l -> m (Raw l)
-macroExpand1 = go
+macroExpand :: (MonadEvaluator l m) => Raw l -> m (Raw l)
+macroExpand z = do
+  sanitize mempty <$> go 1 (stamp 0 z)
   where
-    go a@(RS "quote" :. _) = pure a
-    go (q@(RS "quasiquote") `RPair` r :# l) = (:# l) . RPair q <$> qqExpand r
-    go (RPair a@(RS s) b :# lq) = do
+    go _ a@(RS "quote" :. _) = pure a
+    go n (q@(RS "quasiquote") `RPair` r :# l) = (:# l) . RPair q <$> qqExpand n r
+    go n (RPair a@(RS s) b :# lq) = do
       m <- view (environment . at s)
       case m of
         Just (EMacro f :# _) -> do
           b' <- analyzeUntyped $ quote b
           let u = EApply1 f b' :# lq
-          x <- evaluate =<< infer =<< liftChecker [] (synthesize u)
-          pure $ toRaw x
-        _ -> (:# lq) . RPair a <$> goInner b
-    go (RPair x y :# l) = (:# l) <$> (RPair <$> go x <*> goInner y)
-    go r = pure r
+          u' <- infer =<< liftChecker [] (synthesize u)
+          x <- evaluate u'
+          go (n + 1) (stamp n $ toRaw x)
+        _ -> (:# lq) . RPair a <$> goInner n b
+    go n (RPair x y :# l) = (:# l) <$> (RPair <$> go n x <*> goInner n y)
+    go _ r = pure r
 
-    goInner (RPair x y :# l) = (:# l) <$> (RPair <$> go x <*> goInner y)
-    goInner r = pure r
+    goInner n (RPair x y :# l) = (:# l) <$> (RPair <$> go n x <*> goInner n y)
+    goInner _ r = pure r
 
-    qqExpand (RPair u@(RS "unquote") b :# l) = (:# l) . RPair u <$> go b
-    qqExpand (RPair u@(RS "unquote-splicing") b :# l) = (:# l) . RPair u <$> go b
-    qqExpand (RPair a b :# l) = (:# l) <$> (RPair <$> qqExpand a <*> qqExpand b)
-    qqExpand q = pure q
+    stamp _ r@(RUnit :# _) = r
+    stamp _ r@(RTsSymbol _ _ :# _) = r
+    stamp n (RSymbol s :# l) = RTsSymbol s n :# l
+    stamp n (RPair a b :# l) = RPair (stamp n a) (stamp n b) :# l
+
+    qqExpand n (RPair u@(RS "unquote") b :# l) = (:# l) . RPair u <$> go n b
+    qqExpand n (RPair u@(RS "unquote-splicing") b :# l) =
+      (:# l) . RPair u <$> go n b
+    qqExpand n (RPair a b :# l) =
+      (:# l) <$> (RPair <$> qqExpand n a <*> qqExpand n b)
+    qqExpand _ q = pure q
 
     quote e@(_ :# l) = rawTuple (RSymbol "quote" :# locBegin l :| [e])
 
     toRaw (EUnit :# l) = RUnit :# l
     toRaw (ESymbol s :# l) = RSymbol s :# l
+    toRaw (ETsSymbol s n :# l) = RTsSymbol s n :# l
     toRaw (EPair x y :# l) = RPair (toRaw x) (toRaw y) :# l
     toRaw e = trace' (render e) $ bug Unreachable
 
-macroExpand :: (MonadEvaluator l m) => Raw l -> m (Raw l)
-macroExpand w = do
-  w' <- macroExpand1 w
-  if w == w'
-    then pure w
-    else macroExpand w'
+    capturing = S.fromList ["lambda", "implicit", "macro", "forall"]
+
+    sanitize :: Map (Symbol, Int) Symbol -> Raw l -> Raw l
+    sanitize _ r@(RUnit :# _) = r
+    sanitize _ r@(RSymbol _ :# _) = r
+    sanitize _ (RTsSymbol s 0 :# l) = RSymbol s :# l
+    sanitize sub (RTsSymbol s n :# l) | Just r <- sub !? (s, n) = RSymbol r :# l
+    sanitize _ (RTsSymbol s _ :# l) = RSymbol s :# l
+    sanitize sub (m@(RS s) `RPair` rs@(ss :. _) :# l)
+      | s `member` capturing =
+          let sub' = flipfoldl' (uncurry insert) sub (bindings ss)
+           in (sanitize sub m `RPair` sanitize sub' rs) :# l
+    sanitize _ (RPair q@(RS "quote") b :# l) = RPair q (sanitizeQ b) :# l
+    sanitize sub (RPair q@(RS "quasiquote") b :# l) = RPair q (sanitizeQQ sub b) :# l
+    sanitize sub (RPair a b :# l) = RPair (sanitize sub a) (sanitize sub b) :# l
+
+    sanitizeQ r@(RUnit :# _) = r
+    sanitizeQ r@(RSymbol _ :# _) = r
+    sanitizeQ (RTsSymbol s _ :# l) = RSymbol s :# l
+    sanitizeQ (RPair a b :# l) = RPair (sanitizeQ a) (sanitizeQ b) :# l
+
+    sanitizeQQ _ r@(RUnit :# _) = r
+    sanitizeQQ _ r@(RSymbol _ :# _) = r
+    sanitizeQQ _ (RTsSymbol s _ :# l) = RSymbol s :# l
+    sanitizeQQ sub (RPair q@(RS "unquote") b :# l) =
+      RPair (sanitize sub q) (sanitize sub b) :# l
+    sanitizeQQ sub (RPair q@(RS "unquote-splicing") b :# l) =
+      RPair (sanitize sub q) (sanitize sub b) :# l
+    sanitizeQQ sub (RPair a b :# l) =
+      RPair (sanitizeQQ sub a) (sanitizeQQ sub b) :# l
+
+    bindings :: Raw l -> [((Symbol, Int), Symbol)]
+    bindings (RUnit :# _) = []
+    bindings (RSymbol _ :# _) = []
+    bindings (RTsSymbol s n :# _) = [((s, n), s <> "&" <> show n)]
+    bindings (RPair a@(RTsSymbol _ _ :# _) b :# _) = bindings a ++ bindings b
+    bindings (RPair _ b :# _) = bindings b
 
 evaluateTopLevel' ::
   ( MonadState (ZState l) m,

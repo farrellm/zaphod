@@ -62,31 +62,50 @@ baseEnvironment =
       ("is-nil", LocU (ENative (Native (pure . isNil)))),
       ("is-symbol", LocU (ENative (Native (pure . isSymbol)))),
       ("is-pair", LocU (ENative (Native (pure . isPair)))),
-      ("symbol-eq", LocU (ENative (Native (pure . stripEq . zUncurry2')))),
+      ("symbol-eq", LocU (ENative (Native (pure . toZBool . topEq . zUncurry2')))),
       ("symbol-concat", LocU (ENative (Native (symbolConcat . zUncurry2')))),
-      ("top-eq", LocU (ENative (Native (pure . stripEq . zUncurry2')))),
+      ("top-eq", LocU (ENative (Native (pure . toZBool . topEq . zUncurry2')))),
       ("unsafe-gensym", LocU (ENativeIO (NativeIO unsafeGensym))),
       ("promote", LocU (ENative (Native (pure . promote)))),
       -- Special forms
       ("apply", LocU ESpecial),
+      ("capture", LocU (ENative (Native (pure . capture)))),
       -- bypass type checker
       ("unsafe-coerce", LocU (ENative' (Native' pure)))
     ]
   where
     cons (l@(_ :# ll), r@(_ :# lr)) = EPair l r :# (ll <> lr)
+
     isNil (LocU EUnit) = zTrue
     isNil _ = zFalse
+
     isSymbol (LocU ESymbol {}) = zTrue
+    isSymbol (LocU ETsSymbol {}) = zTrue
     isSymbol _ = zFalse
+
     isPair (LocU EPair {}) = zTrue
     isPair _ = zFalse
+
     symbolConcat (x, y) = do
       s <- liftA2 (<>) (getSymbol "symbol-concat" x) (getSymbol "symbol-concat" y)
       pure (LocU $ ESymbol s)
+
     toZBool True = zTrue
     toZBool False = zFalse
-    stripEq (x, y) = toZBool (x == y)
-    unsafeGensym = LocU . ESymbol <$> gensym
+
+    topEq (LocU EUnit, LocU EUnit) = True
+    topEq (LocU (ESymbol x), LocU (ESymbol y)) = x == y
+    topEq (LocU (ESymbol x), LocU (ETsSymbol y _)) = x == y
+    topEq (LocU (ETsSymbol x _), LocU (ESymbol y)) = x == y
+    topEq (LocU (ETsSymbol x _), LocU (ETsSymbol y _)) = x == y
+    topEq (LocU (EPair x1 x2), LocU (EPair y1 y2)) = topEq (x1, y1) && topEq (x2, y2)
+    topEq _ = False
+
+    unsafeGensym = LocU . flip ETsSymbol 0 <$> gensym
+
+    capture (LocU (ESymbol s)) = LocU (ETsSymbol s 0)
+    capture _ = bug Unreachable
+
     promote x = LocU $ EType (ZValue x)
 
 baseContext :: Environment (ZType Typed')
@@ -111,6 +130,7 @@ baseContext =
       ("promote", zPromote),
       -- Special forms
       ("apply", zApply),
+      ("capture", zCapture),
       -- bypass type checker
       ("unsafe-coerce", zUnsafeCoerce),
       -- bootstrapping
@@ -121,6 +141,7 @@ baseContext =
     zFst = ZForall a . ZForall b $ ZFunction (zTuple1 (ZPair za zb)) za
     zSnd = ZForall a . ZForall b $ ZFunction (zTuple1 (ZPair za zb)) zb
     zApply = ZForall a . ZForall b $ ZFunction (zTuple2 (ZFunction za zb) za) zb
+    zCapture = ZFunction (zTuple1 ZSymbol) ZSymbol
     zUnsafeCoerce = ZForall a . ZForall b $ ZFunction (zTuple1 za) zb
     zUnsafeGensym = ZFunction ZUnit ZSymbol
     zPromote = ZForall a $ ZFunction za (ZType 0)
@@ -136,6 +157,7 @@ getPair n e = throwError $ TypeMismatch n (project e) () "Pair"
 
 getSymbol :: Text -> Untyped' -> Either (NativeException ()) Symbol
 getSymbol _ (LocU (ESymbol s)) = pure s
+getSymbol _ (LocU (ETsSymbol s 0)) = pure s
 getSymbol n e = throwError $ TypeMismatch n e () "Symbol"
 
 zUncurry2 :: Untyped l -> (Untyped l, Untyped l)
