@@ -6,10 +6,12 @@ module Prelude
     traceM',
     debug,
     debugM,
+    tracePrettyId,
   )
 where
 
 import Control.Monad.Except as X (MonadError, throwError)
+import Prettyprinter (Pretty (pretty))
 import Relude as X
 import Relude.Extra.Bifunctor as X (bimapF)
 import Relude.Extra.Enum as X (next, prev)
@@ -31,3 +33,6 @@ debug t =
 
 debugM :: Applicative f => Text -> f ()
 debugM x = when enableDebug $ traceM' x
+
+tracePrettyId :: (Pretty a) => a -> a
+tracePrettyId a = traceShow (pretty a) a

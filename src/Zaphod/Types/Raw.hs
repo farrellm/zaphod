@@ -4,9 +4,10 @@
 
 module Zaphod.Types.Raw where
 
+import Prettyprinter (Pretty (pretty), align, brackets, parens, sep, (<+>))
 import Zaphod.Types.Class (Location (..), Magma (..), MaybeList (..), Render (..))
 import Zaphod.Types.Location (LocF (..), LocU (..))
-import Zaphod.Types.Wrapper (Symbol)
+import Zaphod.Types.Wrapper (Symbol (..))
 
 data RawF k
   = RUnit
@@ -76,3 +77,22 @@ rawTuple (x@(_ :# l) :| xs) =
   case nonEmpty xs of
     Nothing -> x >< (RUnit :# locEnd l)
     Just xs' -> x >< rawTuple xs'
+
+instance Pretty (Raw l) where
+  pretty (RSymbol (Symbol s) :# _) = pretty s
+  pretty (RTsSymbol (Symbol s) n :# _) = pretty s <> "@" <> pretty n
+  pretty (RS "def" :. r)
+    | Just rs <- maybeList r =
+        parens ("def" <+> (align . sep $ pretty <$> rs))
+  pretty r | Just rs <- retuple r = brackets (align . sep $ pretty <$> rs)
+    where
+      retuple (RS "cons" :. q :. RU :. RU) = Just [q]
+      retuple (RS "cons" :. q :. qs :. RU) = Just (q :) <*> retuple qs
+      retuple _ = Nothing
+  pretty (RS "quote" :. q :. RU) = "'" <> pretty q
+  pretty (RS "quasiquote" :. q :. RU) = "`" <> pretty q
+  pretty (RS "unquote" :. q :. RU) = "," <> pretty q
+  pretty (RS "unquote-splicing" :. q :. RU) = ",@" <> pretty q
+  pretty r | Just rs <- maybeList r = parens (align . sep $ pretty <$> rs)
+  pretty (RPair a b :# _) = parens (pretty a <> " . " <> pretty b)
+  pretty (RUnit :# _) = "()"
